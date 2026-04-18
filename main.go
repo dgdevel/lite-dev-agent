@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/dgdevel/lite-dev-agent/internal/agent"
@@ -28,6 +29,19 @@ func main() {
 	rootPath := "."
 	if args := flag.Args(); len(args) > 0 {
 		rootPath = args[0]
+	}
+
+	if rootPath != "." {
+		abs, err := filepath.Abs(rootPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error resolving path: %v\n", err)
+			os.Exit(1)
+		}
+		if err := os.Chdir(abs); err != nil {
+			fmt.Fprintf(os.Stderr, "error changing directory: %v\n", err)
+			os.Exit(1)
+		}
+		rootPath = "."
 	}
 
 	cfg, err := config.Load(rootPath)
