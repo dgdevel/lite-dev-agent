@@ -85,6 +85,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "conversation log: %s\n", convLog.Path())
 	}
 
+	stdin := bufio.NewReader(os.Stdin)
+	readInputFn := func() (string, error) {
+		return readInput(stdin)
+	}
+
 	defaultAgentCfg := cfg.DefaultAgent()
 	agents := make(map[string]*agent.Agent)
 
@@ -101,6 +106,11 @@ func main() {
 
 		agentRegistry := agent.NewToolRegistry()
 
+		var agentWriter io.Writer = stdoutWriter
+		if convLog != nil {
+			agentWriter = conversation.NewTeeWriter(stdoutWriter, convLog)
+		}
+
 		toolList := ac.ToolList()
 		for _, toolGroup := range toolList {
 			switch toolGroup {
@@ -112,12 +122,9 @@ func main() {
 				}
 			case "online":
 				agentRegistry.Register("online", tools.NewOnlineProvider(cfg.Timeouts.ToolExecutionDuration()))
+			case "ask":
+				agentRegistry.Register("ask", tools.NewAskProvider(ac.Name, agentWriter, readInputFn))
 			}
-		}
-
-		var agentWriter io.Writer = stdoutWriter
-		if convLog != nil {
-			agentWriter = conversation.NewTeeWriter(stdoutWriter, convLog)
 		}
 
 		a := &agent.Agent{
@@ -162,8 +169,6 @@ func main() {
 		<-sigCh
 		cancel()
 	}()
-
-	stdin := bufio.NewReader(os.Stdin)
 
 	for {
 		protocol.WriteWaitingInput(stdoutWriter, mainAgent.Config.Name)
