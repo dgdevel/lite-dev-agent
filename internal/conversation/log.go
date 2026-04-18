@@ -247,11 +247,12 @@ func parseToolInput(content string) (name string, arguments string) {
 }
 
 func parseToolOutputContent(content string) string {
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "Response: ") {
-			return strings.TrimPrefix(line, "Response: ")
-		}
+	idx := strings.Index(content, "Response:\n")
+	if idx >= 0 {
+		return content[idx+len("Response:\n"):]
+	}
+	if idx := strings.Index(content, "Response: "); idx >= 0 {
+		return content[idx+len("Response: "):]
 	}
 	return content
 }

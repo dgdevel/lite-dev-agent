@@ -111,7 +111,8 @@ The build is made using `make`, with customization in the `Makefile`.
 
 # agent: manager | tools_output
 Tool name: project_searcher
-Response: The build is made using `make`, with customization in the `Makefile`.
+Response:
+The build is made using `make`, with customization in the `Makefile`.
 
 # time: 1m32s | input_tokens: 1234 | output_tokens: 23424
 

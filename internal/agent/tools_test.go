@@ -112,7 +112,7 @@ func TestFormatToolOutput(t *testing.T) {
 	if !strings.Contains(got, "Tool name: search") {
 		t.Fatalf("missing tool name: %q", got)
 	}
-	if !strings.Contains(got, "Response: found results") {
+	if !strings.Contains(got, "Response:\nfound results") {
 		t.Fatalf("missing response: %q", got)
 	}
 }

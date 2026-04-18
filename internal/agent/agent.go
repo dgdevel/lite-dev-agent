@@ -46,10 +46,12 @@ type RunResult struct {
 func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 	start := time.Now()
 
+	systemPrompt := interpolatePrompt(a.Config.SystemPrompt)
+
 	messages := make([]llm.Message, 0, len(opts.History)+2)
 	messages = append(messages, llm.Message{
 		Role:    "system",
-		Content: a.Config.SystemPrompt,
+		Content: systemPrompt,
 	})
 	messages = append(messages, opts.History...)
 	if opts.UserMessage != "" {
@@ -60,7 +62,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 	}
 
 	if a.Filter.Enabled(protocol.BlockSystemPrompt) {
-		protocol.WriteBlock(a.Writer, a.Config.Name, protocol.BlockSystemPrompt, a.Config.SystemPrompt)
+		protocol.WriteBlock(a.Writer, a.Config.Name, protocol.BlockSystemPrompt, systemPrompt)
 	}
 	if opts.UserMessage != "" && a.Filter.Enabled(protocol.BlockUserMessage) {
 		protocol.WriteBlock(a.Writer, a.Config.Name, protocol.BlockUserMessage, opts.UserMessage)
@@ -211,4 +213,11 @@ func convertDeltasToToolCalls(deltas []llm.ToolCallDelta) []llm.ToolCall {
 		}
 	}
 	return calls
+}
+
+func interpolatePrompt(prompt string) string {
+	now := time.Now()
+	prompt = strings.ReplaceAll(prompt, "{current_date}", now.Format("2006-01-02"))
+	prompt = strings.ReplaceAll(prompt, "{current_time}", now.Format("2006-01-02T15:04:05"))
+	return prompt
 }

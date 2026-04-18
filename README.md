@@ -77,7 +77,23 @@ agents:
 | `llm` | no | LLM name. Falls back to default LLM. |
 | `tools` | yes | Comma-separated tool groups: `agents`, `devkit`, `online` |
 | `expose` | no | If set, this agent is available as a tool to other agents |
-| `system_prompt` | yes | System prompt |
+| `system_prompt` | yes | System prompt. Supports `{current_date}` and `{current_time}` variables. |
+
+### Prompt variables
+
+These variables are interpolated at runtime in `system_prompt`:
+
+| Variable | Example value | Description |
+|----------|---------------|-------------|
+| `{current_date}` | `2026-04-18` | Current date in ISO 8601 format |
+| `{current_time}` | `2026-04-18T14:30:05` | Current date and time in ISO 8601 format |
+
+Example:
+```yaml
+system_prompt: >
+  You are an assistant. Today is {current_date},
+  current time is {current_time}. Help the user.
+```
 
 ### Timeouts
 
@@ -140,7 +156,8 @@ This is a Go CLI tool that orchestrates LLM agents.
 
 # agent: manager | tools_output
 Tool name: searcher
-Response: This is a Go CLI tool that orchestrates LLM agents.
+Response:
+This is a Go CLI tool that orchestrates LLM agents.
 
 # time: 1m32s | input_tokens: 1234 | output_tokens: 23424
 

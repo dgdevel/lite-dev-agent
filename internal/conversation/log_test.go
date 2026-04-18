@@ -139,7 +139,8 @@ Found x
 
 # agent: manager | tools_output
 Tool name: worker
-Response: Found x
+Response:
+Found x
 
 # time: 3s | input_tokens: 0 | output_tokens: 0
 
@@ -206,7 +207,7 @@ func TestReconstructHistoryWithToolCalls(t *testing.T) {
 	blocks := []ParsedBlock{
 		{Header: protocol.Header{AgentName: "mgr", BlockType: protocol.BlockUserMessage}, Content: "Search"},
 		{Header: protocol.Header{AgentName: "mgr", BlockType: protocol.BlockToolsInput}, Content: "Tool name: worker\nArgument 1 (prompt): find files"},
-		{Header: protocol.Header{AgentName: "mgr", BlockType: protocol.BlockToolsOutput}, Content: "Tool name: worker\nResponse: found 3 files"},
+		{Header: protocol.Header{AgentName: "mgr", BlockType: protocol.BlockToolsOutput}, Content: "Tool name: worker\nResponse:\nfound 3 files"},
 		{Header: protocol.Header{AgentName: "mgr", BlockType: protocol.BlockAgentResponse}, Content: "I found 3 files"},
 	}
 
@@ -240,7 +241,7 @@ func TestParseToolInput(t *testing.T) {
 }
 
 func TestParseToolOutputContent(t *testing.T) {
-	content := parseToolOutputContent("Tool name: worker\nResponse: done")
+	content := parseToolOutputContent("Tool name: worker\nResponse:\ndone")
 	if content != "done" {
 		t.Fatalf("content: %q", content)
 	}
