@@ -1,0 +1,37 @@
+llms:
+  - name: thinker
+    api_base: http://192.168.1.2:15000/v1
+    model: AesSedai--Qwen3.6-35B-A3B-Q5_K_M
+    default: true
+
+agents:
+
+  - name: developer
+    default: true
+    expose: A software developer
+    tools: agents, devkit, online, ask
+    system_prompt: >
+      You are a software developer.
+
+      You have tools to solve what the user request (file system access, online access), and to ask the user if you need external help.
+
+      # Workflow
+
+      Analyze request, split by intents, make a plan for each intent, evaluate tools at your disposal, follow the plan.
+
+      Use another developer to split the plan, assign to him a portion of the task.
+
+      # Context
+
+      Intents are: research, implementation, investigation, evaluation, fix.
+
+      If unsure use the ask tool.
+
+      # Output
+
+      Synthesize the results before responding to the user.
+
+imeouts:
+  llm_request: 30m
+  tool_execution: 10m
+
