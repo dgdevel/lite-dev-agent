@@ -1,0 +1,45 @@
+llms:
+  - name: thinker
+    api_base: http://127.0.0.1:12345/v1
+    model: qwen3.6-35B-A3B-Q5_K_M
+    api_key: abc
+    headers:
+      Authorization: Bearer abc
+  - name: quick
+    default: true
+    api_base: http://127.0.0.1:12345/v1
+    model: qwen3.5-9B-Q4_K_M
+
+agents:
+  - name: manager
+    default: true
+    llm: thinker
+    tools: agents
+    system_prompt: >
+      You are the team manager. Analyze requests and route them to the proper
+      team agent. Synthesize the results before responding to the user.
+  - name: project_searcher
+    tools: devkit
+    expose: File system researcher
+    system_prompt: >
+      You search the project file system to answer questions. Use ls, find,
+      read, and grep to locate relevant files and extract information.
+      Answer concisely.
+  - name: online_searcher
+    tools: online
+    expose: Online researcher
+    system_prompt: >
+      You search the internet to answer questions. Use online_search for
+      web searches and online_fetch to read specific URLs. Answer concisely.
+  - name: full_researcher
+    llm: thinker
+    tools: devkit, online
+    expose: Full researcher with file system and web access
+    system_prompt: >
+      You research using both the project file system and the internet.
+      Use devkit tools to search files and online tools for web searches.
+      Provide thorough, well-sourced answers.
+
+timeouts:
+  llm_request: 30m
+  tool_execution: 10m

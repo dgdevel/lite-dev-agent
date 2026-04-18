@@ -1,0 +1,276 @@
+package protocol
+
+import (
+	"bytes"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestBlockTypeString(t *testing.T) {
+	cases := []struct {
+		bt   BlockType
+		want string
+	}{
+		{BlockSystemPrompt, "system_prompt"},
+		{BlockUserMessage, "user_message"},
+		{BlockAgentResponse, "agent_response"},
+		{BlockToolsInput, "tools_input"},
+		{BlockToolsOutput, "tools_output"},
+		{BlockThinking, "thinking"},
+		{BlockWaitingInput, "waiting_user_input"},
+	}
+	for _, c := range cases {
+		if c.bt.String() != c.want {
+			t.Errorf("BlockType(%d).String() = %q, want %q", c.bt, c.bt.String(), c.want)
+		}
+	}
+}
+
+func TestParseBlockType(t *testing.T) {
+	_, ok := ParseBlockType("nonexistent")
+	if ok {
+		t.Fatal("ParseBlockType should return false for unknown type")
+	}
+
+	bt, ok := ParseBlockType("agent_response")
+	if !ok || bt != BlockAgentResponse {
+		t.Fatal("ParseBlockType(agent_response) failed")
+	}
+}
+
+func TestParseHeader(t *testing.T) {
+	h, ok := ParseHeader("# agent: manager | system_prompt")
+	if !ok {
+		t.Fatal("ParseHeader failed")
+	}
+	if h.AgentName != "manager" {
+		t.Fatalf("agent name: got %q", h.AgentName)
+	}
+	if h.BlockType != BlockSystemPrompt {
+		t.Fatalf("block type: got %d", h.BlockType)
+	}
+}
+
+func TestParseHeaderAllTypes(t *testing.T) {
+	cases := []struct {
+		line string
+		bt   BlockType
+	}{
+		{"# agent: mgr | system_prompt", BlockSystemPrompt},
+		{"# agent: mgr | user_message", BlockUserMessage},
+		{"# agent: mgr | agent_response", BlockAgentResponse},
+		{"# agent: mgr | tools_input", BlockToolsInput},
+		{"# agent: mgr | tools_output", BlockToolsOutput},
+		{"# agent: mgr | thinking", BlockThinking},
+		{"# agent: mgr | waiting_user_input", BlockWaitingInput},
+	}
+	for _, c := range cases {
+		h, ok := ParseHeader(c.line)
+		if !ok {
+			t.Errorf("ParseHeader(%q) not ok", c.line)
+			continue
+		}
+		if h.BlockType != c.bt {
+			t.Errorf("ParseHeader(%q) type = %d, want %d", c.line, h.BlockType, c.bt)
+		}
+	}
+}
+
+func TestParseHeaderInvalid(t *testing.T) {
+	cases := []string{
+		"not a header",
+		"# agent: ",
+		"# agent: x | invalid_type",
+		"# foo: bar | system_prompt",
+		"",
+	}
+	for _, c := range cases {
+		_, ok := ParseHeader(c)
+		if ok {
+			t.Errorf("ParseHeader(%q) should fail", c)
+		}
+	}
+}
+
+func TestParseFooter(t *testing.T) {
+	f, ok := ParseFooter("# time: 1m32s | input_tokens: 1234 | output_tokens: 5678")
+	if !ok {
+		t.Fatal("ParseFooter failed")
+	}
+	if f.Duration != 1*time.Minute+32*time.Second {
+		t.Fatalf("duration: got %v", f.Duration)
+	}
+	if f.InputTokens != 1234 {
+		t.Fatalf("input_tokens: got %d", f.InputTokens)
+	}
+	if f.OutputTokens != 5678 {
+		t.Fatalf("output_tokens: got %d", f.OutputTokens)
+	}
+}
+
+func TestParseFooterSeconds(t *testing.T) {
+	f, ok := ParseFooter("# time: 45s | input_tokens: 0 | output_tokens: 0")
+	if !ok {
+		t.Fatal("ParseFooter failed")
+	}
+	if f.Duration != 45*time.Second {
+		t.Fatalf("duration: got %v", f.Duration)
+	}
+}
+
+func TestParseFooterInvalid(t *testing.T) {
+	cases := []string{
+		"# agent: x | system_prompt",
+		"not a footer",
+		"",
+	}
+	for _, c := range cases {
+		_, ok := ParseFooter(c)
+		if ok {
+			t.Errorf("ParseFooter(%q) should fail", c)
+		}
+	}
+}
+
+func TestIsHeader(t *testing.T) {
+	if !IsHeader("# agent: x | system_prompt") {
+		t.Fatal("should be header")
+	}
+	if IsHeader("not a header") {
+		t.Fatal("should not be header")
+	}
+}
+
+func TestIsFooter(t *testing.T) {
+	if !IsFooter("# time: 1s | input_tokens: 0 | output_tokens: 0") {
+		t.Fatal("should be footer")
+	}
+	if IsFooter("# agent: x | system_prompt") {
+		t.Fatal("should not be footer")
+	}
+}
+
+func TestWriteHeader(t *testing.T) {
+	var buf bytes.Buffer
+	WriteHeader(&buf, "manager", BlockSystemPrompt)
+	if buf.String() != "# agent: manager | system_prompt\n" {
+		t.Fatalf("unexpected: %q", buf.String())
+	}
+}
+
+func TestWriteFooter(t *testing.T) {
+	var buf bytes.Buffer
+	WriteFooter(&buf, 92*time.Second, 1234, 5678)
+	got := buf.String()
+	want := "# time: 1m32s | input_tokens: 1234 | output_tokens: 5678\n"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestWriteFooterHours(t *testing.T) {
+	var buf bytes.Buffer
+	WriteFooter(&buf, 2*time.Hour+30*time.Minute, 0, 0)
+	got := buf.String()
+	if !strings.Contains(got, "2h30m0s") {
+		t.Fatalf("expected hours in footer, got %q", got)
+	}
+}
+
+func TestWriteFooterSecondsOnly(t *testing.T) {
+	var buf bytes.Buffer
+	WriteFooter(&buf, 5*time.Second, 0, 0)
+	got := buf.String()
+	if !strings.Contains(got, "5s") {
+		t.Fatalf("expected seconds in footer, got %q", got)
+	}
+}
+
+func TestWriteBlock(t *testing.T) {
+	var buf bytes.Buffer
+	WriteBlock(&buf, "manager", BlockAgentResponse, "Hello world")
+	got := buf.String()
+	if !strings.HasPrefix(got, "# agent: manager | agent_response\n") {
+		t.Fatalf("missing header: %q", got)
+	}
+	if !strings.Contains(got, "Hello world\n") {
+		t.Fatalf("missing content: %q", got)
+	}
+}
+
+func TestWriteBlockNoTrailingNewline(t *testing.T) {
+	var buf bytes.Buffer
+	WriteBlock(&buf, "mgr", BlockAgentResponse, "content")
+	if !strings.HasSuffix(buf.String(), "\n") {
+		t.Fatal("block should end with newline")
+	}
+}
+
+func TestWriteBlockEmptyContent(t *testing.T) {
+	var buf bytes.Buffer
+	WriteBlock(&buf, "mgr", BlockAgentResponse, "")
+	lines := strings.Count(buf.String(), "\n")
+	if lines != 1 {
+		t.Fatalf("expected 1 line (header only), got %d lines: %q", lines, buf.String())
+	}
+}
+
+func TestWriteWaitingInput(t *testing.T) {
+	var buf bytes.Buffer
+	WriteWaitingInput(&buf, "manager")
+	got := buf.String()
+	if got != "# agent: manager | waiting_user_input\n" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestOutputFilterAll(t *testing.T) {
+	f := NewOutputFilter("")
+	for _, bt := range []BlockType{BlockSystemPrompt, BlockUserMessage, BlockAgentResponse, BlockToolsInput, BlockToolsOutput, BlockThinking} {
+		if !f.Enabled(bt) {
+			t.Fatalf("filter should enable %s when empty", bt)
+		}
+	}
+}
+
+func TestOutputFilterSpecific(t *testing.T) {
+	f := NewOutputFilter("system_prompt,agent_response")
+	if !f.Enabled(BlockSystemPrompt) {
+		t.Fatal("system_prompt should be enabled")
+	}
+	if !f.Enabled(BlockAgentResponse) {
+		t.Fatal("agent_response should be enabled")
+	}
+	if f.Enabled(BlockToolsInput) {
+		t.Fatal("tools_input should be disabled")
+	}
+	if f.Enabled(BlockThinking) {
+		t.Fatal("thinking should be disabled")
+	}
+}
+
+func TestOutputFilterWithSpaces(t *testing.T) {
+	f := NewOutputFilter("  system_prompt , agent_response  ")
+	if !f.Enabled(BlockSystemPrompt) || !f.Enabled(BlockAgentResponse) {
+		t.Fatal("spaces should be trimmed")
+	}
+}
+
+func TestFormatDuration(t *testing.T) {
+	cases := []struct {
+		d    time.Duration
+		want string
+	}{
+		{92 * time.Second, "1m32s"},
+		{45 * time.Second, "45s"},
+		{2*time.Hour + 30*time.Minute + 5*time.Second, "2h30m5s"},
+		{0, "0s"},
+	}
+	for _, c := range cases {
+		got := formatDuration(c.d)
+		if got != c.want {
+			t.Errorf("formatDuration(%v) = %q, want %q", c.d, got, c.want)
+		}
+	}
+}
