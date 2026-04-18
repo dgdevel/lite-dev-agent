@@ -21,6 +21,7 @@ Requires Go 1.26+. Produces the `lite-dev-agent` binary.
 | `--output` | (all) | Comma-separated list of output sections: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `thinking` |
 | `--devkit-path` | (PATH lookup) | Path to the nixdevkit executable |
 | `--resume` | (none) | Path to a conversation log file to resume from |
+| `--color` | false | Colorize output with ANSI escape codes |
 
 `ROOT_PATH` is the target project directory. Defaults to current directory.
 

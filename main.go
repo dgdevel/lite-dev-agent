@@ -22,6 +22,7 @@ func main() {
 	outputFlag := flag.String("output", "", "comma-separated list of output sections to emit")
 	devkitPathFlag := flag.String("devkit-path", "", "path to the nixdevkit executable")
 	resumeFlag := flag.String("resume", "", "path to conversation log to resume from")
+	colorFlag := flag.Bool("color", false, "colorize output with ANSI escape codes")
 	flag.Parse()
 
 	rootPath := "."
@@ -37,7 +38,14 @@ func main() {
 
 	filter := protocol.NewOutputFilter(*outputFlag)
 
-	agentToolProvider := tools.NewAgentToolProvider(cfg, os.Stdout, filter, &cfg.Timeouts)
+	var colorWriter *protocol.ColorWriter
+	stdoutWriter := io.Writer(os.Stdout)
+	if *colorFlag {
+		colorWriter = protocol.NewColorWriter(os.Stdout)
+		stdoutWriter = colorWriter
+	}
+
+	agentToolProvider := tools.NewAgentToolProvider(cfg, stdoutWriter, filter, &cfg.Timeouts)
 
 	needsDevkit := false
 	for _, ac := range cfg.Agents {
@@ -107,9 +115,9 @@ func main() {
 			}
 		}
 
-		var agentWriter io.Writer = os.Stdout
+		var agentWriter io.Writer = stdoutWriter
 		if convLog != nil {
-			agentWriter = conversation.NewTeeWriter(os.Stdout, convLog)
+			agentWriter = conversation.NewTeeWriter(stdoutWriter, convLog)
 		}
 
 		a := &agent.Agent{
@@ -158,7 +166,7 @@ func main() {
 	stdin := bufio.NewReader(os.Stdin)
 
 	for {
-		protocol.WriteWaitingInput(os.Stdout, mainAgent.Config.Name)
+		protocol.WriteWaitingInput(stdoutWriter, mainAgent.Config.Name)
 
 		input, err := readInput(stdin)
 		if err != nil {

@@ -23,6 +23,21 @@ A Go CLI tool that orchestrates LLM agents with configurable tool access. Operat
 | `--output` | (all) | Comma-separated list of output sections to emit. Filters which blocks appear on stdout. |
 | `--devkit-path` | (lookup in `$PATH`) | Path to the nixdevkit MCP server executable. If not provided, `nixdevkit` must be discoverable in `$PATH`. |
 | `--resume` | (none) | Path to a conversation log file to restore session context from. See §12. |
+| `--color` | false | Colorize output using ANSI escape codes. |
+
+### `--color` mapping
+
+| Output | Color |
+|--------|-------|
+| Header lines (`# agent: ...`) | Yellow |
+| Footer lines (`# time: ...`) | Yellow |
+| `user_message` content | White |
+| `agent_response` content | White |
+| `thinking` content | Light red |
+| `tools_input` content | Light green |
+| `tools_output` content | Light green |
+
+Colors are applied only to stdout. Conversation log files are always uncolored.
 
 ### `--output` filter values
 

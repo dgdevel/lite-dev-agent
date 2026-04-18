@@ -88,7 +88,7 @@ func FormatToolInput(name string, arguments string) string {
 }
 
 func FormatToolOutput(name string, result string) string {
-	return fmt.Sprintf("Tool name: %s\nResponse: %s", name, result)
+	return fmt.Sprintf("Tool name: %s\nResponse: %s\n", name, result)
 }
 
 func sortedKeys(m map[string]any) []string {

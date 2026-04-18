@@ -274,3 +274,113 @@ func TestFormatDuration(t *testing.T) {
 		}
 	}
 }
+
+func TestColorWriterHeader(t *testing.T) {
+	var buf bytes.Buffer
+	cw := NewColorWriter(&buf)
+	cw.Write([]byte("# agent: mgr | system_prompt\n"))
+	cw.Flush()
+	if !strings.Contains(buf.String(), ansiYellow) {
+		t.Fatalf("header should be yellow: %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "system_prompt") {
+		t.Fatalf("should contain header text: %q", buf.String())
+	}
+}
+
+func TestColorWriterFooter(t *testing.T) {
+	var buf bytes.Buffer
+	cw := NewColorWriter(&buf)
+	cw.Write([]byte("# agent: mgr | user_message\n"))
+	cw.Write([]byte("# time: 5s | input_tokens: 10 | output_tokens: 20\n"))
+	cw.Flush()
+	if !strings.Contains(buf.String(), ansiYellow+"# time:") {
+		t.Fatalf("footer should be yellow: %q", buf.String())
+	}
+}
+
+func TestColorWriterUserMessage(t *testing.T) {
+	var buf bytes.Buffer
+	cw := NewColorWriter(&buf)
+	cw.Write([]byte("# agent: mgr | user_message\n"))
+	cw.Write([]byte("Hello world\n"))
+	cw.Flush()
+	got := buf.String()
+	if !strings.Contains(got, ansiWhite+"Hello world"+ansiReset) {
+		t.Fatalf("user_message content should be white: %q", got)
+	}
+}
+
+func TestColorWriterAgentResponse(t *testing.T) {
+	var buf bytes.Buffer
+	cw := NewColorWriter(&buf)
+	cw.Write([]byte("# agent: mgr | agent_response\n"))
+	cw.Write([]byte("The answer is 42\n"))
+	cw.Flush()
+	got := buf.String()
+	if !strings.Contains(got, ansiWhite+"The answer is 42"+ansiReset) {
+		t.Fatalf("agent_response content should be white: %q", got)
+	}
+}
+
+func TestColorWriterThinking(t *testing.T) {
+	var buf bytes.Buffer
+	cw := NewColorWriter(&buf)
+	cw.Write([]byte("# agent: mgr | thinking\n"))
+	cw.Write([]byte("hmm let me think\n"))
+	cw.Flush()
+	got := buf.String()
+	if !strings.Contains(got, ansiLightRed+"hmm let me think"+ansiReset) {
+		t.Fatalf("thinking content should be light red: %q", got)
+	}
+}
+
+func TestColorWriterToolsInput(t *testing.T) {
+	var buf bytes.Buffer
+	cw := NewColorWriter(&buf)
+	cw.Write([]byte("# agent: mgr | tools_input\n"))
+	cw.Write([]byte("Tool name: search\n"))
+	cw.Flush()
+	got := buf.String()
+	if !strings.Contains(got, ansiLightGreen+"Tool name: search"+ansiReset) {
+		t.Fatalf("tools_input content should be light green: %q", got)
+	}
+}
+
+func TestColorWriterToolsOutput(t *testing.T) {
+	var buf bytes.Buffer
+	cw := NewColorWriter(&buf)
+	cw.Write([]byte("# agent: mgr | tools_output\n"))
+	cw.Write([]byte("Response: found 3 items\n"))
+	cw.Flush()
+	got := buf.String()
+	if !strings.Contains(got, ansiLightGreen+"Response: found 3 items"+ansiReset) {
+		t.Fatalf("tools_output content should be light green: %q", got)
+	}
+}
+
+func TestColorWriterWaitingInput(t *testing.T) {
+	var buf bytes.Buffer
+	cw := NewColorWriter(&buf)
+	cw.Write([]byte("# agent: mgr | waiting_user_input\n"))
+	cw.Flush()
+	got := buf.String()
+	if !strings.Contains(got, ansiYellow) {
+		t.Fatalf("waiting_user_input should be yellow: %q", got)
+	}
+}
+
+func TestColorWriterNoColorPassthrough(t *testing.T) {
+	var buf bytes.Buffer
+	cw := NewColorWriter(&buf)
+	input := "# agent: mgr | system_prompt\nHello\n"
+	cw.Write([]byte(input))
+	cw.Flush()
+	got := buf.String()
+	if !strings.Contains(got, "Hello") {
+		t.Fatalf("content should be present: %q", got)
+	}
+	if !strings.Contains(got, ansiReset) {
+		t.Fatalf("should have reset codes: %q", got)
+	}
+}

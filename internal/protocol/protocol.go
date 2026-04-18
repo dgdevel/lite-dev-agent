@@ -217,3 +217,82 @@ func splitCSV(s string) []string {
 	}
 	return result
 }
+
+const (
+	ansiReset     = "\033[0m"
+	ansiYellow    = "\033[33m"
+	ansiWhite     = "\033[37m"
+	ansiLightRed  = "\033[91m"
+	ansiLightGreen = "\033[92m"
+)
+
+func blockColor(bt BlockType) string {
+	switch bt {
+	case BlockUserMessage, BlockAgentResponse:
+		return ansiWhite
+	case BlockThinking:
+		return ansiLightRed
+	case BlockToolsInput, BlockToolsOutput:
+		return ansiLightGreen
+	default:
+		return ansiYellow
+	}
+}
+
+type ColorWriter struct {
+	w       io.Writer
+	current BlockType
+	buf     []byte
+}
+
+func NewColorWriter(w io.Writer) *ColorWriter {
+	return &ColorWriter{w: w}
+}
+
+func (c *ColorWriter) Write(p []byte) (int, error) {
+	for _, b := range p {
+		if b == '\n' {
+			line := string(c.buf)
+			c.writeColoredLine(line)
+			c.buf = c.buf[:0]
+			n, err := c.w.Write([]byte{'\n'})
+			if err != nil {
+				return 0, err
+			}
+			_ = n
+			continue
+		}
+		c.buf = append(c.buf, b)
+	}
+	return len(p), nil
+}
+
+func (c *ColorWriter) writeColoredLine(line string) {
+	if header, ok := ParseHeader(line); ok {
+		c.current = header.BlockType
+		c.w.Write([]byte(ansiYellow + line + ansiReset))
+		return
+	}
+	if IsFooter(line) {
+		c.w.Write([]byte(ansiYellow + line + ansiReset))
+		return
+	}
+	if strings.HasPrefix(line, "# agent: ") && strings.Contains(line, "waiting_user_input") {
+		c.w.Write([]byte(ansiYellow + line + ansiReset))
+		return
+	}
+	color := blockColor(c.current)
+	if color != "" {
+		c.w.Write([]byte(color + line + ansiReset))
+	} else {
+		c.w.Write([]byte(line))
+	}
+}
+
+func (c *ColorWriter) Flush() {
+	if len(c.buf) > 0 {
+		line := string(c.buf)
+		c.writeColoredLine(line)
+		c.buf = c.buf[:0]
+	}
+}
