@@ -34,13 +34,13 @@ func (p *AskProvider) ToolDefinitions() []llm.ToolDefinition {
 			Type: "function",
 			Function: llm.Function{
 				Name:        "ask_open_ended",
-				Description: "Ask the user an open-ended question and wait for their response.",
+				Description: "Ask the user an open-ended question",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"question": map[string]any{
 							"type":        "string",
-							"description": "The question to ask the user",
+							"description": "The question text",
 						},
 					},
 					"required": []string{"question"},
@@ -51,18 +51,18 @@ func (p *AskProvider) ToolDefinitions() []llm.ToolDefinition {
 			Type: "function",
 			Function: llm.Function{
 				Name:        "ask_multiple_choice",
-				Description: "Ask the user a multiple choice question with numbered options.",
+				Description: "Ask the user a multiple choice question",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"question": map[string]any{
 							"type":        "string",
-							"description": "The question text to present to the user",
+							"description": "The question text",
 						},
 						"options": map[string]any{
 							"type":        "array",
 							"items":       map[string]any{"type": "string"},
-							"description": "List of options to present to the user",
+							"description": "List of options",
 						},
 						"type": map[string]any{
 							"type":        "string",
@@ -71,7 +71,7 @@ func (p *AskProvider) ToolDefinitions() []llm.ToolDefinition {
 						},
 						"allow_open_end_response": map[string]any{
 							"type":        "boolean",
-							"description": "If true, add a 'Type your own response' option for free text input",
+							"description": "If true, add a 'Type your own response' option",
 						},
 					},
 					"required": []string{"question", "options", "type"},
@@ -82,7 +82,7 @@ func (p *AskProvider) ToolDefinitions() []llm.ToolDefinition {
 			Type: "function",
 			Function: llm.Function{
 				Name:        "ask_exec",
-				Description: "Ask the user for permission to execute a command, then run it if approved. Returns the command output or the user's rejection reason.",
+				Description: "Ask the user to execute a command and get the output",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{

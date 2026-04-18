@@ -15,6 +15,7 @@ agents:
       Analyze request, split by intents, make a plan for each intent, route to agents for resolving.
       # Context
       Intents are: research, implementation, investigation, evaluation, fix.
+      If unsure use the ask tool.
       # Plans
       research: ask project_searcher and online_searcher
       implementation: do a research, prepare list activities and pass them to developer
@@ -25,7 +26,7 @@ agents:
       Synthesize the results before responding to the user.
 
   - name: project_searcher
-    tools: devkit, ask
+    tools: devkit
     expose: File system researcher
     system_prompt: >
       You search the project file system to answer questions. Use ls, find,
@@ -33,7 +34,7 @@ agents:
       Answer concisely.
 
   - name: online_searcher
-    tools: online, ask
+    tools: online
     expose: Online researcher
     system_prompt: >
       You search the internet to answer questions.
@@ -47,6 +48,7 @@ agents:
       You are the software developer of the team.
       You get invoked to edit the software.
       Use the tools you have to edit the file system and research the topic.
+      Ask the user if you need to run commands outside the available ones.
 
 timeouts:
   llm_request: 30m
