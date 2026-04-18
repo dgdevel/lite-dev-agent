@@ -8,7 +8,7 @@ agents:
 
   - name: manager
     default: true
-    tools: agents
+    tools: agents, ask
     system_prompt: >
       # Role
       You are the team manager.
@@ -25,7 +25,7 @@ agents:
       Synthesize the results before responding to the user.
 
   - name: project_searcher
-    tools: devkit
+    tools: devkit, ask
     expose: File system researcher
     system_prompt: >
       You search the project file system to answer questions. Use ls, find,
@@ -33,7 +33,7 @@ agents:
       Answer concisely.
 
   - name: online_searcher
-    tools: online
+    tools: online, ask
     expose: Online researcher
     system_prompt: >
       You search the internet to answer questions.
@@ -41,7 +41,7 @@ agents:
       Answer concisely.
 
   - name: developer
-    tools: devkit, online
+    tools: devkit, online, ask
     expose: A software developer, that edit, build and test
     system_prompt: >
       You are the software developer of the team.
