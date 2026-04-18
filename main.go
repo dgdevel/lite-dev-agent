@@ -31,18 +31,25 @@ func main() {
 		rootPath = args[0]
 	}
 
-	if rootPath != "." {
-		abs, err := filepath.Abs(rootPath)
+	if *devkitPathFlag != "" {
+		devkitAbs, err := filepath.Abs(*devkitPathFlag)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error resolving path: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error resolving devkit path: %v\n", err)
 			os.Exit(1)
 		}
-		if err := os.Chdir(abs); err != nil {
-			fmt.Fprintf(os.Stderr, "error changing directory: %v\n", err)
-			os.Exit(1)
-		}
-		rootPath = "."
+		*devkitPathFlag = devkitAbs
 	}
+
+	abs, err := filepath.Abs(rootPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error resolving path: %v\n", err)
+		os.Exit(1)
+	}
+	if err := os.Chdir(abs); err != nil {
+		fmt.Fprintf(os.Stderr, "error changing directory: %v\n", err)
+		os.Exit(1)
+	}
+	rootPath = "."
 
 	cfg, err := config.Load(rootPath)
 	if err != nil {
