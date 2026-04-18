@@ -17,7 +17,7 @@ func TestBlockTypeString(t *testing.T) {
 		{BlockAgentResponse, "agent_response"},
 		{BlockToolsInput, "tools_input"},
 		{BlockToolsOutput, "tools_output"},
-		{BlockThinking, "thinking"},
+		{BlockThinking, "agent_thinking"},
 		{BlockWaitingInput, "waiting_user_input"},
 	}
 	for _, c := range cases {
@@ -62,7 +62,7 @@ func TestParseHeaderAllTypes(t *testing.T) {
 		{"# agent: mgr | agent_response", BlockAgentResponse},
 		{"# agent: mgr | tools_input", BlockToolsInput},
 		{"# agent: mgr | tools_output", BlockToolsOutput},
-		{"# agent: mgr | thinking", BlockThinking},
+		{"# agent: mgr | agent_thinking", BlockThinking},
 		{"# agent: mgr | waiting_user_input", BlockWaitingInput},
 	}
 	for _, c := range cases {
@@ -246,7 +246,7 @@ func TestOutputFilterSpecific(t *testing.T) {
 		t.Fatal("tools_input should be disabled")
 	}
 	if f.Enabled(BlockThinking) {
-		t.Fatal("thinking should be disabled")
+		t.Fatal("agent_thinking should be disabled")
 	}
 }
 
@@ -326,7 +326,7 @@ func TestColorWriterAgentResponse(t *testing.T) {
 func TestColorWriterThinking(t *testing.T) {
 	var buf bytes.Buffer
 	cw := NewColorWriter(&buf)
-	cw.Write([]byte("# agent: mgr | thinking\n"))
+	cw.Write([]byte("# agent: mgr | agent_thinking\n"))
 	cw.Write([]byte("hmm let me think\n"))
 	cw.Flush()
 	got := buf.String()

@@ -133,7 +133,7 @@ func TestOutputFilterIntegration(t *testing.T) {
 		t.Fatal("agent_response should be enabled")
 	}
 	if filter.Enabled(protocol.BlockThinking) {
-		t.Fatal("thinking should be disabled")
+		t.Fatal("agent_thinking should be disabled")
 	}
 }
 

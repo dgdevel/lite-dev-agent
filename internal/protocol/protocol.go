@@ -33,7 +33,7 @@ func (b BlockType) String() string {
 	case BlockToolsOutput:
 		return "tools_output"
 	case BlockThinking:
-		return "thinking"
+		return "agent_thinking"
 	case BlockWaitingInput:
 		return "waiting_user_input"
 	default:
@@ -53,7 +53,7 @@ func ParseBlockType(s string) (BlockType, bool) {
 		return BlockToolsInput, true
 	case "tools_output":
 		return BlockToolsOutput, true
-	case "thinking":
+	case "agent_thinking":
 		return BlockThinking, true
 	case "waiting_user_input":
 		return BlockWaitingInput, true
@@ -228,7 +228,7 @@ const (
 
 func blockColor(bt BlockType) string {
 	switch bt {
-	case BlockAgentResponse:
+	case BlockAgentResponse, BlockUserMessage:
 		return ansiWhite
 	case BlockThinking:
 		return ansiLightRed

@@ -81,6 +81,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 		var thinkingBuf strings.Builder
 		var toolCalls []llm.ToolCallDelta
 		var streamPromptTok, streamCompTok int64
+		var thinkingHeaderWritten bool
 
 		err := a.LLM.ChatCompletionStream(reqCtx, messages, toolDefs, func(e llm.StreamEvent) {
 			switch e.Type {
@@ -89,6 +90,10 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 			case llm.EventThinking:
 				thinkingBuf.WriteString(e.DeltaReasoningContent)
 				if a.Filter.Enabled(protocol.BlockThinking) {
+					if !thinkingHeaderWritten {
+						protocol.WriteHeader(a.Writer, a.Config.Name, protocol.BlockThinking)
+						thinkingHeaderWritten = true
+					}
 					io.WriteString(a.Writer, e.DeltaReasoningContent)
 				}
 			case llm.EventToolCall:
@@ -115,6 +120,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 
 		if thinkingBuf.Len() > 0 && a.Filter.Enabled(protocol.BlockThinking) {
 			io.WriteString(a.Writer, "\n")
+			thinkingHeaderWritten = false
 		}
 
 		if len(toolCalls) > 0 {
