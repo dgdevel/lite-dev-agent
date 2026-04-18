@@ -175,4 +175,4 @@ make test
 ## Dependencies
 
 Runtime (optional):
-- **nixdevkit** — required only when using `devkit` tools. Must be in `$PATH` or specified via `--devkit-path`.
+- **[nixdevkit](https://github.com/dgdevel/nixdevkit)** — required only when using `devkit` tools. Must be in `$PATH` or specified via `--devkit-path`.
