@@ -1,0 +1,54 @@
+llms:
+  - name: thinker
+    api_base: http://192.168.1.2:15000/v1
+    model: AesSedai--Qwen3.6-35B-A3B-Q5_K_M
+    default: true
+
+agents:
+
+  - name: manager
+    default: true
+    tools: agents
+    system_prompt: >
+      # Role
+      You are the team manager.
+      Analyze request, split by intents, make a plan for each intent, route to agents for resolving.
+      # Context
+      Intents are: research, implementation, investigation, evaluation, fix.
+      # Plans
+      research: ask project_searcher and online_searcher
+      implementation: do a research, prepare list activities and pass them to developer
+      investigation: ask project_searcher to work on it
+      evaluation: gather information (research) and expose your proposal to the user
+      fix: pass the information to developer
+      # Output
+      Synthesize the results before responding to the user.
+
+  - name: project_searcher
+    tools: devkit
+    expose: File system researcher
+    system_prompt: >
+      You search the project file system to answer questions. Use ls, find,
+      read, diff, grep to locate relevant files and extract information.
+      Answer concisely.
+
+  - name: online_searcher
+    tools: online
+    expose: Online researcher
+    system_prompt: >
+      You search the internet to answer questions.
+      Use online_search for web searches and online_fetch to read specific URLs.
+      Answer concisely.
+
+  - name: developer
+    tools: devkit, online
+    expose: A software developer, that edit, build and test
+    system_prompt: >
+      You are the software developer of the team.
+      You get invoked to edit the software.
+      Use the tools you have to edit the file system and research the topic.
+
+timeouts:
+  llm_request: 30m
+  tool_execution: 10m
+
