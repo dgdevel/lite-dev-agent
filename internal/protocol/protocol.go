@@ -20,6 +20,7 @@ const (
 	BlockToolsOutput
 	BlockToolsDefinition
 	BlockThinking
+	BlockTokenStats
 	BlockWaitingInput
 )
 
@@ -39,6 +40,8 @@ func (b BlockType) String() string {
 		return "tools_definition"
 	case BlockThinking:
 		return "agent_thinking"
+	case BlockTokenStats:
+		return "token_stats"
 	case BlockWaitingInput:
 		return "waiting_user_input"
 	default:
@@ -62,6 +65,8 @@ func ParseBlockType(s string) (BlockType, bool) {
 		return BlockToolsDefinition, true
 	case "agent_thinking":
 		return BlockThinking, true
+	case "token_stats":
+		return BlockTokenStats, true
 	case "waiting_user_input":
 		return BlockWaitingInput, true
 	default:
@@ -228,6 +233,7 @@ const (
 	ansiWhite      = "\033[37m"
 	ansiLightRed   = "\033[91m"
 	ansiLightGreen = "\033[92m"
+	ansiLightBlue  = "\033[96m"
 )
 
 func blockColor(bt BlockType) string {
@@ -238,6 +244,8 @@ func blockColor(bt BlockType) string {
 		return ansiLightRed
 	case BlockToolsInput, BlockToolsOutput:
 		return ansiLightGreen
+	case BlockTokenStats:
+		return ansiLightBlue
 	default:
 		return ansiYellow
 	}

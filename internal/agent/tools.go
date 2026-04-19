@@ -12,6 +12,7 @@ import (
 type ToolResult struct {
 	Content string
 	IsError bool
+	Usage   *TokenUsage
 }
 
 type ToolProvider interface {

@@ -18,7 +18,7 @@ Requires Go 1.26+. Produces the `lite-dev-agent` binary.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--output` | (all) | Comma-separated list of output sections: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `tools_definition`, `thinking` |
+| `--output` | (all) | Comma-separated list of output sections: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `tools_definition`, `thinking`, `token_stats` |
 | `--resume` | (none) | Path to a conversation log file to resume from |
 | `--color` | false | Colorize output with ANSI escape codes |
 
@@ -203,11 +203,32 @@ This is a Go CLI tool that orchestrates LLM agents.
 Based on the research, this project is a Go CLI for orchestrating LLM agents.
 
 #! time: 0m45s
+
+#! agent: manager | level: 0 | token_stats
+manager          prompt: 2500     completion: 180
+├── searcher     prompt: 1200     completion: 95
+└── analyst      prompt: 800      completion: 60
 ```
 
-Block types: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `tools_definition`, `thinking`.
+Block types: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `tools_definition`, `thinking`, `token_stats`.
 
 Use `--output` to filter which blocks are emitted. Example: `--output agent_response` shows only the final responses.
+
+## Token Statistics
+
+When `token_stats` is included in the output (default), an ASCII tree is emitted after each agent response showing prompt and completion token counts for every LLM call, including nested sub-agent calls:
+
+```
+#! agent: manager | level: 0 | token_stats
+manager          prompt: 2500     completion: 180
+├── searcher     prompt: 1200     completion: 95
+│   └── indexer  prompt: 400      completion: 30
+└── analyst      prompt: 800      completion: 60
+```
+
+Each line shows the agent name, total prompt tokens, and total completion tokens across all LLM requests made by that agent. The tree structure reflects the nesting of sub-agent tool calls.
+
+This uses the OpenAI-compatible `stream_options: {"include_usage": true}` parameter to retrieve token counts from the server.
 
 ## Conversation Logging
 

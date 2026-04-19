@@ -63,6 +63,7 @@ const (
 	EventToolCall
 	EventDone
 	EventError
+	EventUsage
 )
 
 type ToolCallDelta struct {
@@ -108,11 +109,16 @@ func NewClient(opts Options) *Client {
 	}
 }
 
+type streamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
+}
+
 type chatRequest struct {
-	Model    string          `json:"model"`
-	Messages []Message       `json:"messages"`
-	Tools    []ToolDefinition `json:"tools,omitempty"`
-	Stream   bool            `json:"stream"`
+	Model         string          `json:"model"`
+	Messages      []Message       `json:"messages"`
+	Tools         []ToolDefinition `json:"tools,omitempty"`
+	Stream        bool            `json:"stream"`
+	StreamOptions *streamOptions  `json:"stream_options,omitempty"`
 }
 
 type chatResponse struct {
@@ -235,10 +241,11 @@ type StreamCallback func(event StreamEvent)
 
 func (c *Client) ChatCompletionStream(ctx context.Context, messages []Message, tools []ToolDefinition, cb StreamCallback) error {
 	body := chatRequest{
-		Model:    c.model,
-		Messages: messages,
-		Tools:    tools,
-		Stream:   true,
+		Model:         c.model,
+		Messages:      messages,
+		Tools:         tools,
+		Stream:        true,
+		StreamOptions: &streamOptions{IncludeUsage: true},
 	}
 
 	data, err := json.Marshal(body)
@@ -318,6 +325,13 @@ func (c *Client) ChatCompletionStream(ctx context.Context, messages []Message, t
 		}
 
 		if len(chunk.Choices) == 0 {
+			if chunk.Usage != nil {
+				cb(StreamEvent{
+					Type:                  EventUsage,
+					UsagePromptTokens:     chunk.Usage.PromptTokens,
+					UsageCompletionTokens: chunk.Usage.CompletionTokens,
+				})
+			}
 			continue
 		}
 

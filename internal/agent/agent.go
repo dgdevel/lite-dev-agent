@@ -42,6 +42,13 @@ type Agent struct {
 	IsMain  bool
 }
 
+type TokenUsage struct {
+	AgentName        string
+	PromptTokens     int64
+	CompletionTokens int64
+	Children         []*TokenUsage
+}
+
 type RunOptions struct {
 	UserMessage string
 	History     []llm.Message
@@ -51,6 +58,7 @@ type RunOptions struct {
 type RunResult struct {
 	Response string
 	Duration time.Duration
+	Usage    *TokenUsage
 }
 
 func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
@@ -87,6 +95,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 	}
 
 	var fullResponse strings.Builder
+	usage := &TokenUsage{AgentName: a.Config.Name}
 
 	for {
 		llmTimeout := a.Timeouts.LLMRequestDuration()
@@ -112,7 +121,14 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 				}
 			case llm.EventToolCall:
 				toolCalls = e.ToolCalls
+			case llm.EventUsage:
+				usage.PromptTokens += e.UsagePromptTokens
+				usage.CompletionTokens += e.UsageCompletionTokens
 			case llm.EventDone:
+				if e.UsagePromptTokens > 0 || e.UsageCompletionTokens > 0 {
+					usage.PromptTokens += e.UsagePromptTokens
+					usage.CompletionTokens += e.UsageCompletionTokens
+				}
 			}
 		})
 		cancel()
@@ -169,8 +185,12 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 			})
 
 			if a.Filter.Enabled(protocol.BlockToolsOutput) {
-				protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsOutput, FormatToolOutput(toolName, toolContent))
-			}
+					protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsOutput, FormatToolOutput(toolName, toolContent))
+				}
+
+				if result.Usage != nil {
+					usage.Children = append(usage.Children, result.Usage)
+				}
 
 				if a.Filter.Enabled(protocol.BlockAgentResponse) {
 					protocol.WriteFooter(a.Writer, time.Since(start))
@@ -193,9 +213,13 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 			protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockAgentResponse, response)
 		}
 
-		if a.Filter.Enabled(protocol.BlockAgentResponse) {
-			protocol.WriteFooter(a.Writer, time.Since(start))
-		}
+	if a.Filter.Enabled(protocol.BlockAgentResponse) {
+		protocol.WriteFooter(a.Writer, time.Since(start))
+	}
+
+	if a.Filter.Enabled(protocol.BlockTokenStats) {
+		protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockTokenStats, usage.String())
+	}
 
 		messages = append(messages, llm.Message{
 			Role:    "assistant",
@@ -210,6 +234,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 	return &RunResult{
 		Response: fullResponse.String(),
 		Duration: time.Since(start),
+		Usage:    usage,
 	}, nil
 }
 
@@ -226,6 +251,31 @@ func convertDeltasToToolCalls(deltas []llm.ToolCallDelta) []llm.ToolCall {
 		}
 	}
 	return calls
+}
+
+func (u *TokenUsage) String() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%-16s prompt: %-8d completion: %d\n", u.AgentName, u.PromptTokens, u.CompletionTokens)
+	u.writeChildren(&b, "")
+	return b.String()
+}
+
+func (u *TokenUsage) writeChildren(b *strings.Builder, prefix string) {
+	for i, child := range u.Children {
+		isLast := i == len(u.Children)-1
+		connector := "├── "
+		if isLast {
+			connector = "└── "
+		}
+		fmt.Fprintf(b, "%s%s%-16s prompt: %-8d completion: %d\n", prefix, connector, child.AgentName, child.PromptTokens, child.CompletionTokens)
+		childPrefix := prefix
+		if isLast {
+			childPrefix += "    "
+		} else {
+			childPrefix += "│   "
+		}
+		child.writeChildren(b, childPrefix)
+	}
 }
 
 func interpolatePrompt(prompt string) string {

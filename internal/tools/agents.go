@@ -101,5 +101,6 @@ func (p *AgentToolProvider) CallTool(ctx context.Context, name string, arguments
 
 	return agent.ToolResult{
 		Content: result.Response,
+		Usage:   result.Usage,
 	}, nil
 }
