@@ -22,9 +22,15 @@ agents:
 
       # Workflow
 
-      Analyze request, split by intents (research, implementation, investigation, evaluation, fix), make a plan for each intent, evaluate tools at your disposal, follow the plan.
+      1. Analyze the text, split in requests
 
-      Use another developer to split the plan, use the task tools, assign to him a portion of the task.
+      2. For each request assign an intent between research, implementation, investigation, evaluation, fix
+
+      3. Evaluate the tool needed to resolve the request
+
+      4. Make a plan, use the tasks tool to write down the work plan
+
+      5. Follow the work plan\: update it using tasks_* tools, work on the step or assign it to `developer` (a clone of yourself) if it is a big task
 
       If unsure use the ask tool.
 
