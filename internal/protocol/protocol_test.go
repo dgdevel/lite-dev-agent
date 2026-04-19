@@ -300,8 +300,8 @@ func TestColorWriterUserMessage(t *testing.T) {
 	cw.Write([]byte("Hello world\n"))
 	cw.Flush()
 	got := buf.String()
-	if !strings.Contains(got, ansiWhite+"Hello world"+ansiReset) {
-		t.Fatalf("user_message content should be white: %q", got)
+	if !strings.Contains(got, ansiYellow+"Hello world"+ansiReset) {
+		t.Fatalf("user_message content should be yellow: %q", got)
 	}
 }
 

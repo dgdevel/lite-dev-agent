@@ -216,7 +216,7 @@ const (
 
 func blockColor(bt BlockType) string {
 	switch bt {
-	case BlockAgentResponse, BlockUserMessage:
+	case BlockAgentResponse:
 		return ansiWhite
 	case BlockThinking:
 		return ansiLightRed
