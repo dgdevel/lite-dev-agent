@@ -18,7 +18,7 @@ Requires Go 1.26+. Produces the `lite-dev-agent` binary.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--output` | (all) | Comma-separated list of output sections: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `thinking` |
+| `--output` | (all) | Comma-separated list of output sections: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `tools_definition`, `thinking` |
 | `--resume` | (none) | Path to a conversation log file to resume from |
 | `--color` | false | Colorize output with ANSI escape codes |
 
@@ -163,49 +163,49 @@ Input and output use a structured text format over stdin/stdout. Headers and foo
 Type your message after the `waiting_user_input` header. End with a blank line:
 
 ```
-#! agent: manager | waiting_user_input
+#! agent: manager | level: 0 | waiting_user_input
 What does this project do?
-                                      <- blank line ends input
+                                       <- blank line ends input
 ```
 
 ### Output
 
 ```
-#! agent: manager | system_prompt
+#! agent: manager | level: 0 | system_prompt
 You are the team manager
 
-#! agent: manager | user_message
+#! agent: manager | level: 0 | user_message
 What does this project do?
 
-#! agent: manager | tools_input
+#! agent: manager | level: 0 | tools_input
 Tool name: searcher
 Argument 1 (prompt): What does this project do?
 
-#! agent: searcher | system_prompt
+#! agent: searcher | level: 1 | system_prompt
 You search files and the web
 
-#! agent: searcher | user_message
+#! agent: searcher | level: 1 | user_message
 What does this project do?
 
-#! agent: searcher | agent_response
+#! agent: searcher | level: 1 | agent_response
 This is a Go CLI tool that orchestrates LLM agents.
 
 #! time: 1m32s
 
-#! agent: manager | tools_output
+#! agent: manager | level: 0 | tools_output
 Tool name: searcher
 Response:
 This is a Go CLI tool that orchestrates LLM agents.
 
 #! time: 1m32s
 
-#! agent: manager | agent_response
+#! agent: manager | level: 0 | agent_response
 Based on the research, this project is a Go CLI for orchestrating LLM agents.
 
 #! time: 0m45s
 ```
 
-Block types: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `thinking`.
+Block types: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `tools_definition`, `thinking`.
 
 Use `--output` to filter which blocks are emitted. Example: `--output agent_response` shows only the final responses.
 

@@ -137,6 +137,23 @@ func TestOutputFilterIntegration(t *testing.T) {
 	}
 }
 
+func TestFormatToolDefinitions(t *testing.T) {
+	defs := []llm.ToolDefinition{
+		{Type: "function", Function: llm.Function{Name: "search", Description: "Search the web", Parameters: map[string]any{"type": "object"}}},
+		{Type: "function", Function: llm.Function{Name: "read", Description: "Read a file"}},
+	}
+	got := FormatToolDefinitions(defs)
+	if !strings.Contains(got, "search: Search the web") {
+		t.Fatalf("missing search tool: %q", got)
+	}
+	if !strings.Contains(got, "Parameters:") {
+		t.Fatalf("missing parameters: %q", got)
+	}
+	if !strings.Contains(got, "read: Read a file") {
+		t.Fatalf("missing read tool: %q", got)
+	}
+}
+
 func TestResolveTools(t *testing.T) {
 	r := NewToolRegistry()
 	p1 := newMockProvider([]llm.ToolDefinition{

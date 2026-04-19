@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -89,6 +90,24 @@ func FormatToolInput(name string, arguments string) string {
 
 func FormatToolOutput(name string, result string) string {
 	return fmt.Sprintf("Tool name: %s\nResponse:\n%s", name, result)
+}
+
+func FormatToolDefinitions(defs []llm.ToolDefinition) string {
+	var b strings.Builder
+	for i, d := range defs {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(d.Function.Name)
+		b.WriteString(": ")
+		b.WriteString(d.Function.Description)
+		if d.Function.Parameters != nil {
+			raw, _ := json.Marshal(d.Function.Parameters)
+			b.WriteString("\nParameters: ")
+			b.WriteString(string(raw))
+		}
+	}
+	return b.String()
 }
 
 func sortedKeys(m map[string]any) []string {

@@ -84,6 +84,7 @@ func (p *AgentToolProvider) CallTool(ctx context.Context, name string, arguments
 
 	result, err := a.Run(ctx, agent.RunOptions{
 		UserMessage: userMsg,
+		Level:       agent.LevelFromContext(ctx) + 1,
 	})
 	if err != nil {
 		if _, ok := err.(*agent.InterruptionError); ok {

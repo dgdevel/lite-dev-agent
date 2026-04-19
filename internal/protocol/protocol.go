@@ -3,6 +3,7 @@ package protocol
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -17,6 +18,7 @@ const (
 	BlockAgentResponse
 	BlockToolsInput
 	BlockToolsOutput
+	BlockToolsDefinition
 	BlockThinking
 	BlockWaitingInput
 )
@@ -33,6 +35,8 @@ func (b BlockType) String() string {
 		return "tools_input"
 	case BlockToolsOutput:
 		return "tools_output"
+	case BlockToolsDefinition:
+		return "tools_definition"
 	case BlockThinking:
 		return "agent_thinking"
 	case BlockWaitingInput:
@@ -54,6 +58,8 @@ func ParseBlockType(s string) (BlockType, bool) {
 		return BlockToolsInput, true
 	case "tools_output":
 		return BlockToolsOutput, true
+	case "tools_definition":
+		return BlockToolsDefinition, true
 	case "agent_thinking":
 		return BlockThinking, true
 	case "waiting_user_input":
@@ -65,6 +71,7 @@ func ParseBlockType(s string) (BlockType, bool) {
 
 type Header struct {
 	AgentName string
+	Level     int
 	BlockType BlockType
 }
 
@@ -74,25 +81,34 @@ type Footer struct {
 
 func ParseHeader(line string) (Header, bool) {
 	line = strings.TrimPrefix(line, prefix)
-	parts := strings.SplitN(line, " | ", 2)
-	if len(parts) != 2 {
+	parts := strings.SplitN(line, " | ", 3)
+	if len(parts) != 3 {
 		return Header{}, false
 	}
 
 	agentPart := parts[0]
-	blockPart := parts[1]
+	levelPart := parts[1]
+	blockPart := parts[2]
 
 	if !strings.HasPrefix(agentPart, "agent: ") {
 		return Header{}, false
 	}
 	agentName := strings.TrimPrefix(agentPart, "agent: ")
 
+	if !strings.HasPrefix(levelPart, "level: ") {
+		return Header{}, false
+	}
+	level, err := strconv.Atoi(strings.TrimPrefix(levelPart, "level: "))
+	if err != nil {
+		return Header{}, false
+	}
+
 	bt, ok := ParseBlockType(blockPart)
 	if !ok {
 		return Header{}, false
 	}
 
-	return Header{AgentName: agentName, BlockType: bt}, true
+	return Header{AgentName: agentName, Level: level, BlockType: bt}, true
 }
 
 func ParseFooter(line string) (Footer, bool) {
@@ -157,24 +173,24 @@ func (f *OutputFilter) Enabled(bt BlockType) bool {
 	return f.enabled[bt]
 }
 
-func WriteHeader(w io.Writer, agentName string, bt BlockType) {
-	fmt.Fprintf(w, "%sagent: %s | %s\n", prefix, agentName, bt)
+func WriteHeader(w io.Writer, agentName string, level int, bt BlockType) {
+	fmt.Fprintf(w, "%sagent: %s | level: %d | %s\n", prefix, agentName, level, bt)
 }
 
 func WriteFooter(w io.Writer, d time.Duration) {
 	fmt.Fprintf(w, "%stime: %s\n", prefix, formatDuration(d))
 }
 
-func WriteBlock(w io.Writer, agentName string, bt BlockType, content string) {
-	WriteHeader(w, agentName, bt)
+func WriteBlock(w io.Writer, agentName string, level int, bt BlockType, content string) {
+	WriteHeader(w, agentName, level, bt)
 	fmt.Fprint(w, content)
 	if content != "" && !strings.HasSuffix(content, "\n") {
 		fmt.Fprintln(w)
 	}
 }
 
-func WriteWaitingInput(w io.Writer, agentName string) {
-	fmt.Fprintf(w, "%sagent: %s | waiting_user_input\n", prefix, agentName)
+func WriteWaitingInput(w io.Writer, agentName string, level int) {
+	fmt.Fprintf(w, "%sagent: %s | level: %d | waiting_user_input\n", prefix, agentName, level)
 }
 
 func formatDuration(d time.Duration) string {

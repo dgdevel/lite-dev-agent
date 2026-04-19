@@ -181,7 +181,7 @@ func main() {
 	}()
 
 	for {
-		protocol.WriteWaitingInput(stdoutWriter, mainAgent.Config.Name)
+		protocol.WriteWaitingInput(stdoutWriter, mainAgent.Config.Name, 0)
 
 		input, err := readInput(stdin)
 		if err != nil {

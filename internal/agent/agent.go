@@ -12,6 +12,17 @@ import (
 	"github.com/dgdevel/lite-dev-agent/internal/protocol"
 )
 
+type contextKey string
+
+const levelContextKey contextKey = "agent_level"
+
+func LevelFromContext(ctx context.Context) int {
+	if v, ok := ctx.Value(levelContextKey).(int); ok {
+		return v
+	}
+	return 0
+}
+
 type InterruptionError struct{}
 
 func (e *InterruptionError) Error() string {
@@ -34,6 +45,7 @@ type Agent struct {
 type RunOptions struct {
 	UserMessage string
 	History     []llm.Message
+	Level       int
 }
 
 type RunResult struct {
@@ -43,6 +55,8 @@ type RunResult struct {
 
 func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 	start := time.Now()
+
+	ctx = context.WithValue(ctx, levelContextKey, opts.Level)
 
 	systemPrompt := interpolatePrompt(a.Config.SystemPrompt)
 
@@ -60,13 +74,17 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 	}
 
 	if a.Filter.Enabled(protocol.BlockSystemPrompt) {
-		protocol.WriteBlock(a.Writer, a.Config.Name, protocol.BlockSystemPrompt, systemPrompt)
+		protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockSystemPrompt, systemPrompt)
 	}
 	if opts.UserMessage != "" && a.Filter.Enabled(protocol.BlockUserMessage) {
-		protocol.WriteBlock(a.Writer, a.Config.Name, protocol.BlockUserMessage, opts.UserMessage)
+		protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockUserMessage, opts.UserMessage)
 	}
 
 	toolDefs := a.Registry.ToolDefinitions()
+
+	if len(toolDefs) > 0 && a.Filter.Enabled(protocol.BlockToolsDefinition) {
+		protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsDefinition, FormatToolDefinitions(toolDefs))
+	}
 
 	var fullResponse strings.Builder
 
@@ -87,7 +105,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 				thinkingBuf.WriteString(e.DeltaReasoningContent)
 				if a.Filter.Enabled(protocol.BlockThinking) {
 					if !thinkingHeaderWritten {
-						protocol.WriteHeader(a.Writer, a.Config.Name, protocol.BlockThinking)
+						protocol.WriteHeader(a.Writer, a.Config.Name, opts.Level, protocol.BlockThinking)
 						thinkingHeaderWritten = true
 					}
 					io.WriteString(a.Writer, e.DeltaReasoningContent)
@@ -128,7 +146,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 				toolArgs := tc.Function.Arguments
 
 				if a.Filter.Enabled(protocol.BlockToolsInput) {
-					protocol.WriteBlock(a.Writer, a.Config.Name, protocol.BlockToolsInput, FormatToolInput(toolName, toolArgs))
+					protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsInput, FormatToolInput(toolName, toolArgs))
 				}
 
 				result, err := a.Registry.CallTool(ctx, toolName, toolArgs)
@@ -151,7 +169,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 			})
 
 			if a.Filter.Enabled(protocol.BlockToolsOutput) {
-				protocol.WriteBlock(a.Writer, a.Config.Name, protocol.BlockToolsOutput, FormatToolOutput(toolName, toolContent))
+				protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsOutput, FormatToolOutput(toolName, toolContent))
 			}
 
 				if a.Filter.Enabled(protocol.BlockAgentResponse) {
@@ -172,7 +190,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 		fullResponse.WriteString(response)
 
 		if a.Filter.Enabled(protocol.BlockAgentResponse) {
-			protocol.WriteBlock(a.Writer, a.Config.Name, protocol.BlockAgentResponse, response)
+			protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockAgentResponse, response)
 		}
 
 		if a.Filter.Enabled(protocol.BlockAgentResponse) {

@@ -108,26 +108,28 @@ func (p *AskProvider) CallTool(ctx context.Context, name string, arguments strin
 		return agent.ToolResult{Content: fmt.Sprintf("invalid arguments: %v", err), IsError: true}, nil
 	}
 
+	level := agent.LevelFromContext(ctx)
+
 	switch name {
 	case "ask_open_ended":
-		return p.handleOpenEnded(args)
+		return p.handleOpenEnded(args, level)
 	case "ask_multiple_choice":
-		return p.handleMultipleChoice(args)
+		return p.handleMultipleChoice(args, level)
 	case "ask_exec":
-		return p.handleExec(ctx, args)
+		return p.handleExec(ctx, args, level)
 	default:
 		return agent.ToolResult{Content: fmt.Sprintf("unknown tool: %s", name), IsError: true}, nil
 	}
 }
 
-func (p *AskProvider) handleOpenEnded(args map[string]any) (agent.ToolResult, error) {
+func (p *AskProvider) handleOpenEnded(args map[string]any, level int) (agent.ToolResult, error) {
 	question := llm.GetArgumentString(args, "question")
 	if question == "" {
 		return agent.ToolResult{Content: "missing question argument", IsError: true}, nil
 	}
 
 	fmt.Fprintln(p.writer, question)
-	protocol.WriteWaitingInput(p.writer, p.agentName)
+	protocol.WriteWaitingInput(p.writer, p.agentName, level)
 
 	response, err := p.readInput()
 	if err != nil {
@@ -137,7 +139,7 @@ func (p *AskProvider) handleOpenEnded(args map[string]any) (agent.ToolResult, er
 	return agent.ToolResult{Content: response}, nil
 }
 
-func (p *AskProvider) handleMultipleChoice(args map[string]any) (agent.ToolResult, error) {
+func (p *AskProvider) handleMultipleChoice(args map[string]any, level int) (agent.ToolResult, error) {
 	question := llm.GetArgumentString(args, "question")
 	if question == "" {
 		return agent.ToolResult{Content: "missing question argument", IsError: true}, nil
@@ -186,7 +188,7 @@ func (p *AskProvider) handleMultipleChoice(args map[string]any) (agent.ToolResul
 		fmt.Fprintf(p.writer, "%d) Type your own response\n", openEndIdx)
 	}
 
-	protocol.WriteWaitingInput(p.writer, p.agentName)
+	protocol.WriteWaitingInput(p.writer, p.agentName, level)
 
 	response, err := p.readInput()
 	if err != nil {
@@ -202,7 +204,7 @@ func (p *AskProvider) handleMultipleChoice(args map[string]any) (agent.ToolResul
 		for _, n := range nums {
 			if n == openEndIdx {
 				fmt.Fprintln(p.writer, "Type your response:")
-				protocol.WriteWaitingInput(p.writer, p.agentName)
+				protocol.WriteWaitingInput(p.writer, p.agentName, level)
 				openResponse, err := p.readInput()
 				if err != nil {
 					return agent.ToolResult{Content: fmt.Sprintf("error reading response: %v", err), IsError: true}, nil
@@ -230,7 +232,7 @@ func (p *AskProvider) handleMultipleChoice(args map[string]any) (agent.ToolResul
 	return agent.ToolResult{Content: strings.Join(selected, ", ")}, nil
 }
 
-func (p *AskProvider) handleExec(ctx context.Context, args map[string]any) (agent.ToolResult, error) {
+func (p *AskProvider) handleExec(ctx context.Context, args map[string]any, level int) (agent.ToolResult, error) {
 	cmdline := llm.GetArgumentString(args, "cmdline")
 	if cmdline == "" {
 		return agent.ToolResult{Content: "missing cmdline argument", IsError: true}, nil
@@ -245,7 +247,7 @@ func (p *AskProvider) handleExec(ctx context.Context, args map[string]any) (agen
 
 	fmt.Fprintf(p.writer, "Execute command: %s\n", cmdline)
 	fmt.Fprintln(p.writer, "Allow execution? [y/n]")
-	protocol.WriteWaitingInput(p.writer, p.agentName)
+	protocol.WriteWaitingInput(p.writer, p.agentName, level)
 
 	response, err := p.readInput()
 	if err != nil {
@@ -254,7 +256,7 @@ func (p *AskProvider) handleExec(ctx context.Context, args map[string]any) (agen
 
 	if !isAffirmative(response) {
 		fmt.Fprintln(p.writer, "Command denied. Type your response:")
-		protocol.WriteWaitingInput(p.writer, p.agentName)
+		protocol.WriteWaitingInput(p.writer, p.agentName, level)
 
 		deniedResponse, err := p.readInput()
 		if err != nil {

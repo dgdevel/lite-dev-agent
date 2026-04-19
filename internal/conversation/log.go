@@ -169,6 +169,10 @@ func ReconstructFromBlocks(blocks []ParsedBlock, systemPrompt string) *Reconstru
 	pendingToolCallIDs := make(map[string][]string)
 
 	for _, block := range blocks {
+		if block.Header.Level > 0 {
+			continue
+		}
+
 		switch block.Header.BlockType {
 		case protocol.BlockSystemPrompt:
 			if systemPrompt == "" {

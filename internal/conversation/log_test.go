@@ -68,13 +68,13 @@ func TestTeeWriter(t *testing.T) {
 }
 
 func TestParseBasic(t *testing.T) {
-	input := `#! agent: manager | system_prompt
+	input := `#! agent: manager | level: 0 | system_prompt
 You are the manager
 
-#! agent: manager | user_message
+#! agent: manager | level: 0 | user_message
 Hello
 
-#! agent: manager | agent_response
+#! agent: manager | level: 0 | agent_response
 Hi there
 
 #! time: 5s
@@ -117,35 +117,35 @@ Hi there
 }
 
 func TestParseWithToolCalls(t *testing.T) {
-	input := `#! agent: manager | system_prompt
+	input := `#! agent: manager | level: 0 | system_prompt
 You manage
 
-#! agent: manager | user_message
+#! agent: manager | level: 0 | user_message
 Search for x
 
-#! agent: manager | tools_input
+#! agent: manager | level: 0 | tools_input
 Tool name: worker
 Argument 1 (prompt): Search for x
 
-#! agent: worker | system_prompt
+#! agent: worker | level: 1 | system_prompt
 You search
 
-#! agent: worker | user_message
+#! agent: worker | level: 1 | user_message
 Search for x
 
-#! agent: worker | agent_response
+#! agent: worker | level: 1 | agent_response
 Found x
 
 #! time: 2s
 
-#! agent: manager | tools_output
+#! agent: manager | level: 0 | tools_output
 Tool name: worker
 Response:
 Found x
 
 #! time: 3s
 
-#! agent: manager | agent_response
+#! agent: manager | level: 0 | agent_response
 Here are the results
 
 #! time: 5s
@@ -163,13 +163,13 @@ Here are the results
 func TestParseFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.txt")
-	content := `#! agent: test | system_prompt
+	content := `#! agent: test | level: 0 | system_prompt
 Hello
 
-#! agent: test | user_message
+#! agent: test | level: 0 | user_message
 Hi
 
-#! agent: test | agent_response
+#! agent: test | level: 0 | agent_response
 Hey
 `
 	os.WriteFile(path, []byte(content), 0644)
@@ -201,6 +201,39 @@ func TestReconstructHistory(t *testing.T) {
 	}
 	if history.Messages[1].Role != "assistant" || history.Messages[1].Content != "Hi there" {
 		t.Fatalf("msg 1: %+v", history.Messages[1])
+	}
+}
+
+func TestReconstructHistorySkipsNestedLevels(t *testing.T) {
+	blocks := []ParsedBlock{
+		{Header: protocol.Header{AgentName: "mgr", Level: 0, BlockType: protocol.BlockUserMessage}, Content: "Search"},
+		{Header: protocol.Header{AgentName: "mgr", Level: 0, BlockType: protocol.BlockToolsInput}, Content: "Tool name: worker\nArgument 1 (prompt): find files"},
+		{Header: protocol.Header{AgentName: "worker", Level: 1, BlockType: protocol.BlockSystemPrompt}, Content: "You search"},
+		{Header: protocol.Header{AgentName: "worker", Level: 1, BlockType: protocol.BlockUserMessage}, Content: "find files"},
+		{Header: protocol.Header{AgentName: "worker", Level: 1, BlockType: protocol.BlockAgentResponse}, Content: "found 3 files"},
+		{Header: protocol.Header{AgentName: "mgr", Level: 0, BlockType: protocol.BlockToolsOutput}, Content: "Tool name: worker\nResponse:\nfound 3 files"},
+		{Header: protocol.Header{AgentName: "mgr", Level: 0, BlockType: protocol.BlockAgentResponse}, Content: "I found 3 files"},
+	}
+
+	history := ReconstructFromBlocks(blocks, "You manage")
+	if len(history.Messages) != 4 {
+		t.Fatalf("expected 4 messages, got %d", len(history.Messages))
+	}
+
+	if history.Messages[0].Role != "user" {
+		t.Fatalf("msg 0 should be user: %s", history.Messages[0].Role)
+	}
+	if history.Messages[1].Role != "assistant" || len(history.Messages[1].ToolCalls) != 1 {
+		t.Fatalf("msg 1 should have tool calls: %+v", history.Messages[1])
+	}
+	if history.Messages[2].Role != "tool" {
+		t.Fatalf("msg 2 should be tool: %s", history.Messages[2].Role)
+	}
+	if history.Messages[2].Content != "found 3 files" {
+		t.Fatalf("tool content: %q", history.Messages[2].Content)
+	}
+	if history.Messages[3].Role != "assistant" || history.Messages[3].Content != "I found 3 files" {
+		t.Fatalf("msg 3: %+v", history.Messages[3])
 	}
 }
 
