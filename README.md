@@ -28,7 +28,7 @@ Requires Go 1.26+. Produces the `lite-dev-agent` binary.
 
 Place a config file at `ROOT_PATH/.lite-dev-agent/config.yml`.
 
-See `config.example.yml` for a full example.
+See `config.template.yml` for a full example.
 
 ### LLMs
 
@@ -248,7 +248,3 @@ New output is appended to the same log file. The agent retains full conversation
 make test
 ```
 
-## Dependencies
-
-Runtime (optional):
-- **[nixdevkit](https://github.com/dgdevel/nixdevkit)** — or any MCP server, configured in the `mcp` section. Required at runtime only when referenced by an agent's `tools`.
