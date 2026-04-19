@@ -30,6 +30,16 @@ func main() {
 		rootPath = args[0]
 	}
 
+	resumePath := *resumeFlag
+	if resumePath != "" {
+		resumeAbs, err := filepath.Abs(resumePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error resolving resume path: %v\n", err)
+			os.Exit(1)
+		}
+		resumePath = resumeAbs
+	}
+
 	abs, err := filepath.Abs(rootPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error resolving path: %v\n", err)
@@ -80,8 +90,8 @@ func main() {
 	}
 
 	var convLog *conversation.Log
-	if *resumeFlag != "" {
-		convLog, err = conversation.OpenLog(*resumeFlag)
+	if resumePath != "" {
+		convLog, err = conversation.OpenLog(resumePath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
@@ -159,8 +169,8 @@ func main() {
 	}
 
 	var history []llm.Message
-	if *resumeFlag != "" {
-		blocks, err := conversation.ParseFile(*resumeFlag)
+	if resumePath != "" {
+		blocks, err := conversation.ParseFile(resumePath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error parsing resume file: %v\n", err)
 			os.Exit(1)
