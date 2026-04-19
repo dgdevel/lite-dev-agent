@@ -40,7 +40,7 @@ func TestParseBlockType(t *testing.T) {
 }
 
 func TestParseHeader(t *testing.T) {
-	h, ok := ParseHeader("# agent: manager | system_prompt")
+	h, ok := ParseHeader("#! agent: manager | system_prompt")
 	if !ok {
 		t.Fatal("ParseHeader failed")
 	}
@@ -57,13 +57,13 @@ func TestParseHeaderAllTypes(t *testing.T) {
 		line string
 		bt   BlockType
 	}{
-		{"# agent: mgr | system_prompt", BlockSystemPrompt},
-		{"# agent: mgr | user_message", BlockUserMessage},
-		{"# agent: mgr | agent_response", BlockAgentResponse},
-		{"# agent: mgr | tools_input", BlockToolsInput},
-		{"# agent: mgr | tools_output", BlockToolsOutput},
-		{"# agent: mgr | agent_thinking", BlockThinking},
-		{"# agent: mgr | waiting_user_input", BlockWaitingInput},
+		{"#! agent: mgr | system_prompt", BlockSystemPrompt},
+		{"#! agent: mgr | user_message", BlockUserMessage},
+		{"#! agent: mgr | agent_response", BlockAgentResponse},
+		{"#! agent: mgr | tools_input", BlockToolsInput},
+		{"#! agent: mgr | tools_output", BlockToolsOutput},
+		{"#! agent: mgr | agent_thinking", BlockThinking},
+		{"#! agent: mgr | waiting_user_input", BlockWaitingInput},
 	}
 	for _, c := range cases {
 		h, ok := ParseHeader(c.line)
@@ -80,9 +80,9 @@ func TestParseHeaderAllTypes(t *testing.T) {
 func TestParseHeaderInvalid(t *testing.T) {
 	cases := []string{
 		"not a header",
-		"# agent: ",
-		"# agent: x | invalid_type",
-		"# foo: bar | system_prompt",
+		"#! agent: ",
+		"#! agent: x | invalid_type",
+		"#! foo: bar | system_prompt",
 		"",
 	}
 	for _, c := range cases {
@@ -94,23 +94,17 @@ func TestParseHeaderInvalid(t *testing.T) {
 }
 
 func TestParseFooter(t *testing.T) {
-	f, ok := ParseFooter("# time: 1m32s | input_tokens: 1234 | output_tokens: 5678")
+	f, ok := ParseFooter("#! time: 1m32s")
 	if !ok {
 		t.Fatal("ParseFooter failed")
 	}
 	if f.Duration != 1*time.Minute+32*time.Second {
 		t.Fatalf("duration: got %v", f.Duration)
 	}
-	if f.InputTokens != 1234 {
-		t.Fatalf("input_tokens: got %d", f.InputTokens)
-	}
-	if f.OutputTokens != 5678 {
-		t.Fatalf("output_tokens: got %d", f.OutputTokens)
-	}
 }
 
 func TestParseFooterSeconds(t *testing.T) {
-	f, ok := ParseFooter("# time: 45s | input_tokens: 0 | output_tokens: 0")
+	f, ok := ParseFooter("#! time: 45s")
 	if !ok {
 		t.Fatal("ParseFooter failed")
 	}
@@ -121,7 +115,7 @@ func TestParseFooterSeconds(t *testing.T) {
 
 func TestParseFooterInvalid(t *testing.T) {
 	cases := []string{
-		"# agent: x | system_prompt",
+		"#! agent: x | system_prompt",
 		"not a footer",
 		"",
 	}
@@ -134,7 +128,7 @@ func TestParseFooterInvalid(t *testing.T) {
 }
 
 func TestIsHeader(t *testing.T) {
-	if !IsHeader("# agent: x | system_prompt") {
+	if !IsHeader("#! agent: x | system_prompt") {
 		t.Fatal("should be header")
 	}
 	if IsHeader("not a header") {
@@ -143,10 +137,10 @@ func TestIsHeader(t *testing.T) {
 }
 
 func TestIsFooter(t *testing.T) {
-	if !IsFooter("# time: 1s | input_tokens: 0 | output_tokens: 0") {
+	if !IsFooter("#! time: 1s") {
 		t.Fatal("should be footer")
 	}
-	if IsFooter("# agent: x | system_prompt") {
+	if IsFooter("#! agent: x | system_prompt") {
 		t.Fatal("should not be footer")
 	}
 }
@@ -154,16 +148,16 @@ func TestIsFooter(t *testing.T) {
 func TestWriteHeader(t *testing.T) {
 	var buf bytes.Buffer
 	WriteHeader(&buf, "manager", BlockSystemPrompt)
-	if buf.String() != "# agent: manager | system_prompt\n" {
+	if buf.String() != "#! agent: manager | system_prompt\n" {
 		t.Fatalf("unexpected: %q", buf.String())
 	}
 }
 
 func TestWriteFooter(t *testing.T) {
 	var buf bytes.Buffer
-	WriteFooter(&buf, 92*time.Second, 1234, 5678)
+	WriteFooter(&buf, 92*time.Second)
 	got := buf.String()
-	want := "# time: 1m32s | input_tokens: 1234 | output_tokens: 5678\n"
+	want := "#! time: 1m32s\n"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
@@ -171,7 +165,7 @@ func TestWriteFooter(t *testing.T) {
 
 func TestWriteFooterHours(t *testing.T) {
 	var buf bytes.Buffer
-	WriteFooter(&buf, 2*time.Hour+30*time.Minute, 0, 0)
+	WriteFooter(&buf, 2*time.Hour+30*time.Minute)
 	got := buf.String()
 	if !strings.Contains(got, "2h30m0s") {
 		t.Fatalf("expected hours in footer, got %q", got)
@@ -180,7 +174,7 @@ func TestWriteFooterHours(t *testing.T) {
 
 func TestWriteFooterSecondsOnly(t *testing.T) {
 	var buf bytes.Buffer
-	WriteFooter(&buf, 5*time.Second, 0, 0)
+	WriteFooter(&buf, 5*time.Second)
 	got := buf.String()
 	if !strings.Contains(got, "5s") {
 		t.Fatalf("expected seconds in footer, got %q", got)
@@ -191,7 +185,7 @@ func TestWriteBlock(t *testing.T) {
 	var buf bytes.Buffer
 	WriteBlock(&buf, "manager", BlockAgentResponse, "Hello world")
 	got := buf.String()
-	if !strings.HasPrefix(got, "# agent: manager | agent_response\n") {
+	if !strings.HasPrefix(got, "#! agent: manager | agent_response\n") {
 		t.Fatalf("missing header: %q", got)
 	}
 	if !strings.Contains(got, "Hello world\n") {
@@ -220,7 +214,7 @@ func TestWriteWaitingInput(t *testing.T) {
 	var buf bytes.Buffer
 	WriteWaitingInput(&buf, "manager")
 	got := buf.String()
-	if got != "# agent: manager | waiting_user_input\n" {
+	if got != "#! agent: manager | waiting_user_input\n" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -278,7 +272,7 @@ func TestFormatDuration(t *testing.T) {
 func TestColorWriterHeader(t *testing.T) {
 	var buf bytes.Buffer
 	cw := NewColorWriter(&buf)
-	cw.Write([]byte("# agent: mgr | system_prompt\n"))
+	cw.Write([]byte("#! agent: mgr | system_prompt\n"))
 	cw.Flush()
 	if !strings.Contains(buf.String(), ansiYellow) {
 		t.Fatalf("header should be yellow: %q", buf.String())
@@ -291,10 +285,10 @@ func TestColorWriterHeader(t *testing.T) {
 func TestColorWriterFooter(t *testing.T) {
 	var buf bytes.Buffer
 	cw := NewColorWriter(&buf)
-	cw.Write([]byte("# agent: mgr | user_message\n"))
-	cw.Write([]byte("# time: 5s | input_tokens: 10 | output_tokens: 20\n"))
+	cw.Write([]byte("#! agent: mgr | user_message\n"))
+	cw.Write([]byte("#! time: 5s\n"))
 	cw.Flush()
-	if !strings.Contains(buf.String(), ansiYellow+"# time:") {
+	if !strings.Contains(buf.String(), ansiYellow+"#! time:") {
 		t.Fatalf("footer should be yellow: %q", buf.String())
 	}
 }
@@ -302,7 +296,7 @@ func TestColorWriterFooter(t *testing.T) {
 func TestColorWriterUserMessage(t *testing.T) {
 	var buf bytes.Buffer
 	cw := NewColorWriter(&buf)
-	cw.Write([]byte("# agent: mgr | user_message\n"))
+	cw.Write([]byte("#! agent: mgr | user_message\n"))
 	cw.Write([]byte("Hello world\n"))
 	cw.Flush()
 	got := buf.String()
@@ -314,7 +308,7 @@ func TestColorWriterUserMessage(t *testing.T) {
 func TestColorWriterAgentResponse(t *testing.T) {
 	var buf bytes.Buffer
 	cw := NewColorWriter(&buf)
-	cw.Write([]byte("# agent: mgr | agent_response\n"))
+	cw.Write([]byte("#! agent: mgr | agent_response\n"))
 	cw.Write([]byte("The answer is 42\n"))
 	cw.Flush()
 	got := buf.String()
@@ -326,7 +320,7 @@ func TestColorWriterAgentResponse(t *testing.T) {
 func TestColorWriterThinking(t *testing.T) {
 	var buf bytes.Buffer
 	cw := NewColorWriter(&buf)
-	cw.Write([]byte("# agent: mgr | agent_thinking\n"))
+	cw.Write([]byte("#! agent: mgr | agent_thinking\n"))
 	cw.Write([]byte("hmm let me think\n"))
 	cw.Flush()
 	got := buf.String()
@@ -338,7 +332,7 @@ func TestColorWriterThinking(t *testing.T) {
 func TestColorWriterToolsInput(t *testing.T) {
 	var buf bytes.Buffer
 	cw := NewColorWriter(&buf)
-	cw.Write([]byte("# agent: mgr | tools_input\n"))
+	cw.Write([]byte("#! agent: mgr | tools_input\n"))
 	cw.Write([]byte("Tool name: search\n"))
 	cw.Flush()
 	got := buf.String()
@@ -350,7 +344,7 @@ func TestColorWriterToolsInput(t *testing.T) {
 func TestColorWriterToolsOutput(t *testing.T) {
 	var buf bytes.Buffer
 	cw := NewColorWriter(&buf)
-	cw.Write([]byte("# agent: mgr | tools_output\n"))
+	cw.Write([]byte("#! agent: mgr | tools_output\n"))
 	cw.Write([]byte("Response: found 3 items\n"))
 	cw.Flush()
 	got := buf.String()
@@ -362,7 +356,7 @@ func TestColorWriterToolsOutput(t *testing.T) {
 func TestColorWriterWaitingInput(t *testing.T) {
 	var buf bytes.Buffer
 	cw := NewColorWriter(&buf)
-	cw.Write([]byte("# agent: mgr | waiting_user_input\n"))
+	cw.Write([]byte("#! agent: mgr | waiting_user_input\n"))
 	cw.Flush()
 	got := buf.String()
 	if !strings.Contains(got, ansiYellow) {
@@ -373,7 +367,7 @@ func TestColorWriterWaitingInput(t *testing.T) {
 func TestColorWriterNoColorPassthrough(t *testing.T) {
 	var buf bytes.Buffer
 	cw := NewColorWriter(&buf)
-	input := "# agent: mgr | system_prompt\nHello\n"
+	input := "#! agent: mgr | system_prompt\nHello\n"
 	cw.Write([]byte(input))
 	cw.Flush()
 	got := buf.String()

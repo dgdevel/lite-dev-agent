@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dgdevel/lite-dev-agent/internal/protocol"
 )
@@ -67,16 +68,16 @@ func TestTeeWriter(t *testing.T) {
 }
 
 func TestParseBasic(t *testing.T) {
-	input := `# agent: manager | system_prompt
+	input := `#! agent: manager | system_prompt
 You are the manager
 
-# agent: manager | user_message
+#! agent: manager | user_message
 Hello
 
-# agent: manager | agent_response
+#! agent: manager | agent_response
 Hi there
 
-# time: 5s | input_tokens: 10 | output_tokens: 20
+#! time: 5s
 `
 	blocks, err := Parse(strings.NewReader(input))
 	if err != nil {
@@ -110,44 +111,44 @@ Hi there
 	if blocks[2].Footer == nil {
 		t.Fatal("block 2 should have footer")
 	}
-	if blocks[2].Footer.InputTokens != 10 || blocks[2].Footer.OutputTokens != 20 {
-		t.Fatalf("footer: %+v", blocks[2].Footer)
+	if blocks[2].Footer.Duration != 5*time.Second {
+		t.Fatalf("footer duration: %v", blocks[2].Footer.Duration)
 	}
 }
 
 func TestParseWithToolCalls(t *testing.T) {
-	input := `# agent: manager | system_prompt
+	input := `#! agent: manager | system_prompt
 You manage
 
-# agent: manager | user_message
+#! agent: manager | user_message
 Search for x
 
-# agent: manager | tools_input
+#! agent: manager | tools_input
 Tool name: worker
 Argument 1 (prompt): Search for x
 
-# agent: worker | system_prompt
+#! agent: worker | system_prompt
 You search
 
-# agent: worker | user_message
+#! agent: worker | user_message
 Search for x
 
-# agent: worker | agent_response
+#! agent: worker | agent_response
 Found x
 
-# time: 2s | input_tokens: 50 | output_tokens: 10
+#! time: 2s
 
-# agent: manager | tools_output
+#! agent: manager | tools_output
 Tool name: worker
 Response:
 Found x
 
-# time: 3s | input_tokens: 0 | output_tokens: 0
+#! time: 3s
 
-# agent: manager | agent_response
+#! agent: manager | agent_response
 Here are the results
 
-# time: 5s | input_tokens: 100 | output_tokens: 50
+#! time: 5s
 `
 	blocks, err := Parse(strings.NewReader(input))
 	if err != nil {
@@ -162,13 +163,13 @@ Here are the results
 func TestParseFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.txt")
-	content := `# agent: test | system_prompt
+	content := `#! agent: test | system_prompt
 Hello
 
-# agent: test | user_message
+#! agent: test | user_message
 Hi
 
-# agent: test | agent_response
+#! agent: test | agent_response
 Hey
 `
 	os.WriteFile(path, []byte(content), 0644)

@@ -37,10 +37,8 @@ type RunOptions struct {
 }
 
 type RunResult struct {
-	Response        string
-	PromptTokens    int64
-	CompletionTokens int64
-	Duration        time.Duration
+	Response string
+	Duration time.Duration
 }
 
 func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
@@ -71,7 +69,6 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 	toolDefs := a.Registry.ToolDefinitions()
 
 	var fullResponse strings.Builder
-	var totalPromptTok, totalCompTok int64
 
 	for {
 		llmTimeout := a.Timeouts.LLMRequestDuration()
@@ -80,7 +77,6 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 		var textBuf strings.Builder
 		var thinkingBuf strings.Builder
 		var toolCalls []llm.ToolCallDelta
-		var streamPromptTok, streamCompTok int64
 		var thinkingHeaderWritten bool
 
 		err := a.LLM.ChatCompletionStream(reqCtx, messages, toolDefs, func(e llm.StreamEvent) {
@@ -99,8 +95,6 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 			case llm.EventToolCall:
 				toolCalls = e.ToolCalls
 			case llm.EventDone:
-				streamPromptTok = e.UsagePromptTokens
-				streamCompTok = e.UsageCompletionTokens
 			}
 		})
 		cancel()
@@ -114,9 +108,6 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 			}
 			return nil, fmt.Errorf("LLM request failed: %w", err)
 		}
-
-		totalPromptTok += streamPromptTok
-		totalCompTok += streamCompTok
 
 		if thinkingBuf.Len() > 0 && a.Filter.Enabled(protocol.BlockThinking) {
 			io.WriteString(a.Writer, "\n")
@@ -164,7 +155,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 			}
 
 				if a.Filter.Enabled(protocol.BlockAgentResponse) {
-					protocol.WriteFooter(a.Writer, time.Since(start), totalPromptTok, totalCompTok)
+					protocol.WriteFooter(a.Writer, time.Since(start))
 				}
 			}
 
@@ -185,7 +176,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 		}
 
 		if a.Filter.Enabled(protocol.BlockAgentResponse) {
-			protocol.WriteFooter(a.Writer, time.Since(start), totalPromptTok, totalCompTok)
+			protocol.WriteFooter(a.Writer, time.Since(start))
 		}
 
 		messages = append(messages, llm.Message{
@@ -199,10 +190,8 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 	a.History = messages[1:]
 
 	return &RunResult{
-		Response:         fullResponse.String(),
-		PromptTokens:     totalPromptTok,
-		CompletionTokens: totalCompTok,
-		Duration:         time.Since(start),
+		Response: fullResponse.String(),
+		Duration: time.Since(start),
 	}, nil
 }
 

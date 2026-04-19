@@ -21,7 +21,6 @@ import (
 
 func main() {
 	outputFlag := flag.String("output", "", "comma-separated list of output sections to emit")
-	devkitPathFlag := flag.String("devkit-path", "", "path to the nixdevkit executable")
 	resumeFlag := flag.String("resume", "", "path to conversation log to resume from")
 	colorFlag := flag.Bool("color", false, "colorize output with ANSI escape codes")
 	flag.Parse()
@@ -29,15 +28,6 @@ func main() {
 	rootPath := "."
 	if args := flag.Args(); len(args) > 0 {
 		rootPath = args[0]
-	}
-
-	if *devkitPathFlag != "" {
-		devkitAbs, err := filepath.Abs(*devkitPathFlag)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error resolving devkit path: %v\n", err)
-			os.Exit(1)
-		}
-		*devkitPathFlag = devkitAbs
 	}
 
 	abs, err := filepath.Abs(rootPath)
@@ -68,24 +58,25 @@ func main() {
 
 	agentToolProvider := tools.NewAgentToolProvider(cfg, stdoutWriter, filter, &cfg.Timeouts)
 
-	needsDevkit := false
+	neededMCPs := make(map[string]bool)
 	for _, ac := range cfg.Agents {
 		for _, t := range ac.ToolList() {
-			if t == "devkit" {
-				needsDevkit = true
+			if cfg.FindMCP(t) != nil {
+				neededMCPs[t] = true
 			}
 		}
 	}
 
-	var devkitProvider *tools.DevkitProvider
-	if needsDevkit {
-		dp, err := tools.NewDevkitProvider(*devkitPathFlag, rootPath, cfg.Timeouts.ToolExecutionDuration())
+	mcpProviders := make(map[string]*tools.MCPProvider)
+	for mcpName := range neededMCPs {
+		mcpCfg := cfg.FindMCP(mcpName)
+		mp, err := tools.NewMCPProvider(mcpCfg, rootPath, cfg.Timeouts.ToolExecutionDuration())
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
-		defer dp.Close()
-		devkitProvider = dp
+		defer mp.Close()
+		mcpProviders[mcpName] = mp
 	}
 
 	var convLog *conversation.Log
@@ -137,14 +128,12 @@ func main() {
 			switch toolGroup {
 			case "agents":
 				agentRegistry.Register("agents", agentToolProvider)
-			case "devkit":
-				if devkitProvider != nil {
-					agentRegistry.Register("devkit", devkitProvider)
-				}
-			case "online":
-				agentRegistry.Register("online", tools.NewOnlineProvider(cfg.Timeouts.ToolExecutionDuration()))
 			case "ask":
 				agentRegistry.Register("ask", tools.NewAskProvider(ac.Name, agentWriter, readInputFn))
+			default:
+				if mp, ok := mcpProviders[toolGroup]; ok {
+					agentRegistry.Register(toolGroup, mp)
+				}
 			}
 		}
 

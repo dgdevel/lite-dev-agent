@@ -4,6 +4,42 @@ llms:
     model: AesSedai--Qwen3.6-35B-A3B-Q5_K_M
     default: true
 
+mcp:
+  - name: fs-ro
+    type: stdio
+    allow:
+      - ls
+      - find
+      - read
+      - grep
+      - diff
+      - stat
+    command: "../nixdevkit/nixdevkit %s"
+  - name: fs-rw
+    type: stdio
+    allow:
+      - ls
+      - find
+      - read
+      - grep
+      - diff
+      - stat
+      - create
+      - edit
+      - sed
+      - patch
+      - rm
+      - available_commands
+      - exec_command
+    command: "../nixdevkit/nixdevkit %s"
+  - name: online
+    type: stdio
+    allow:
+      - w3m-dump
+      - online_search
+    command: "../nixdevkit/nixdevkit %s"
+
+
 agents:
 
   - name: manager
@@ -38,7 +74,7 @@ agents:
       Synthesize the results before responding to the user.
 
   - name: project_searcher
-    tools: devkit
+    tools: fs-ro
     expose: File system researcher
     system_prompt: >
       You search the project file system to answer questions. Use ls, find,
@@ -57,7 +93,7 @@ agents:
       Answer concisely.
 
   - name: developer
-    tools: devkit, online, ask
+    tools: fs-rw, online, ask
     expose: A software developer, that edit, build and test
     system_prompt: >
       You are the software developer of the team.
@@ -71,4 +107,3 @@ agents:
 timeouts:
   llm_request: 30m
   tool_execution: 10m
-

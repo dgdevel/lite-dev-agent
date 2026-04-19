@@ -494,3 +494,261 @@ agents:
 		t.Fatalf("expected value, got %s", l.Headers["X-Custom"])
 	}
 }
+
+func TestLoadWithMCP(t *testing.T) {
+	dir := t.TempDir()
+	writeTestConfig(t, dir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+mcp:
+  - name: devkit
+    type: stdio
+    command: "nixdevkit %s"
+  - name: remote
+    type: http
+    url: http://localhost:8080/mcp
+    headers:
+      Authorization: Bearer token123
+agents:
+  - name: x
+    default: true
+    tools: devkit, remote
+    system_prompt: test
+`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.MCPs) != 2 {
+		t.Fatalf("expected 2 mcp entries, got %d", len(cfg.MCPs))
+	}
+	if cfg.MCPs[0].Name != "devkit" {
+		t.Fatalf("expected devkit, got %s", cfg.MCPs[0].Name)
+	}
+	if cfg.MCPs[0].Type != "stdio" {
+		t.Fatalf("expected stdio, got %s", cfg.MCPs[0].Type)
+	}
+	if cfg.MCPs[0].Command != "nixdevkit %s" {
+		t.Fatalf("expected nixdevkit %%s, got %s", cfg.MCPs[0].Command)
+	}
+	if cfg.MCPs[1].Name != "remote" {
+		t.Fatalf("expected remote, got %s", cfg.MCPs[1].Name)
+	}
+	if cfg.MCPs[1].URL != "http://localhost:8080/mcp" {
+		t.Fatalf("unexpected url: %s", cfg.MCPs[1].URL)
+	}
+	if cfg.MCPs[1].Headers["Authorization"] != "Bearer token123" {
+		t.Fatalf("unexpected headers: %v", cfg.MCPs[1].Headers)
+	}
+}
+
+func TestFindMCP(t *testing.T) {
+	dir := t.TempDir()
+	writeTestConfig(t, dir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+mcp:
+  - name: devkit
+    type: stdio
+    command: "nixdevkit %s"
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: test
+`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := cfg.FindMCP("devkit"); m == nil || m.Name != "devkit" {
+		t.Fatal("FindMCP(devkit) failed")
+	}
+	if m := cfg.FindMCP("nonexistent"); m != nil {
+		t.Fatal("FindMCP(nonexistent) should return nil")
+	}
+}
+
+func TestValidateMCPMissingName(t *testing.T) {
+	dir := t.TempDir()
+	writeTestConfig(t, dir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+mcp:
+  - type: stdio
+    command: "nixdevkit %s"
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: test
+`)
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("expected error for mcp missing name")
+	}
+}
+
+func TestValidateMCPInvalidType(t *testing.T) {
+	dir := t.TempDir()
+	writeTestConfig(t, dir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+mcp:
+  - name: devkit
+    type: grpc
+    command: "nixdevkit"
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: test
+`)
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("expected error for invalid mcp type")
+	}
+}
+
+func TestValidateMCPStdioMissingCommand(t *testing.T) {
+	dir := t.TempDir()
+	writeTestConfig(t, dir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+mcp:
+  - name: devkit
+    type: stdio
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: test
+`)
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("expected error for stdio missing command")
+	}
+}
+
+func TestValidateMCPHTTPMissingURL(t *testing.T) {
+	dir := t.TempDir()
+	writeTestConfig(t, dir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+mcp:
+  - name: remote
+    type: http
+agents:
+  - name: x
+    default: true
+    tools: remote
+    system_prompt: test
+`)
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("expected error for http missing url")
+	}
+}
+
+func TestValidateMCPDuplicateName(t *testing.T) {
+	dir := t.TempDir()
+	writeTestConfig(t, dir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+mcp:
+  - name: devkit
+    type: stdio
+    command: "cmd1"
+  - name: devkit
+    type: stdio
+    command: "cmd2"
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: test
+`)
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("expected error for duplicate mcp name")
+	}
+}
+
+func TestConfigWithMCPPrefix(t *testing.T) {
+	dir := t.TempDir()
+	writeTestConfig(t, dir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+mcp:
+  - name: devkit
+    type: stdio
+    command: "nixdevkit %s"
+    prefix: "fs_"
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: test
+`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MCPs[0].Prefix != "fs_" {
+		t.Fatalf("expected prefix fs_, got %q", cfg.MCPs[0].Prefix)
+	}
+}
+
+func TestMCPAllowDeny(t *testing.T) {
+	dir := t.TempDir()
+	writeTestConfig(t, dir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+mcp:
+  - name: devkit
+    type: stdio
+    command: "nixdevkit %s"
+    allow:
+      - ls
+      - read
+      - grep
+  - name: toolsrv
+    type: http
+    url: http://localhost:8080/mcp
+    deny:
+      - dangerous_tool
+agents:
+  - name: x
+    default: true
+    tools: devkit, toolsrv
+    system_prompt: test
+`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.MCPs[0].Allow) != 3 || cfg.MCPs[0].Allow[0] != "ls" {
+		t.Fatalf("allow: %v", cfg.MCPs[0].Allow)
+	}
+	if len(cfg.MCPs[1].Deny) != 1 || cfg.MCPs[1].Deny[0] != "dangerous_tool" {
+		t.Fatalf("deny: %v", cfg.MCPs[1].Deny)
+	}
+}

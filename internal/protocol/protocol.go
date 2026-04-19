@@ -3,10 +3,11 @@ package protocol
 import (
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 	"time"
 )
+
+const prefix = "#! "
 
 type BlockType int
 
@@ -68,13 +69,11 @@ type Header struct {
 }
 
 type Footer struct {
-	Duration     time.Duration
-	InputTokens  int64
-	OutputTokens int64
+	Duration time.Duration
 }
 
 func ParseHeader(line string) (Header, bool) {
-	line = strings.TrimPrefix(line, "# ")
+	line = strings.TrimPrefix(line, prefix)
 	parts := strings.SplitN(line, " | ", 2)
 	if len(parts) != 2 {
 		return Header{}, false
@@ -97,7 +96,7 @@ func ParseHeader(line string) (Header, bool) {
 }
 
 func ParseFooter(line string) (Footer, bool) {
-	line = strings.TrimPrefix(line, "# ")
+	line = strings.TrimPrefix(line, prefix)
 	if !strings.HasPrefix(line, "time:") {
 		return Footer{}, false
 	}
@@ -110,21 +109,10 @@ func ParseFooter(line string) (Footer, bool) {
 		if len(kv) != 2 {
 			continue
 		}
-		switch kv[0] {
-		case "time":
+		if kv[0] == "time" {
 			d, err := time.ParseDuration(kv[1])
 			if err == nil {
 				f.Duration = d
-			}
-		case "input_tokens":
-			n, err := strconv.ParseInt(kv[1], 10, 64)
-			if err == nil {
-				f.InputTokens = n
-			}
-		case "output_tokens":
-			n, err := strconv.ParseInt(kv[1], 10, 64)
-			if err == nil {
-				f.OutputTokens = n
 			}
 		}
 	}
@@ -170,11 +158,11 @@ func (f *OutputFilter) Enabled(bt BlockType) bool {
 }
 
 func WriteHeader(w io.Writer, agentName string, bt BlockType) {
-	fmt.Fprintf(w, "# agent: %s | %s\n", agentName, bt)
+	fmt.Fprintf(w, "%sagent: %s | %s\n", prefix, agentName, bt)
 }
 
-func WriteFooter(w io.Writer, d time.Duration, inputTokens, outputTokens int64) {
-	fmt.Fprintf(w, "# time: %s | input_tokens: %d | output_tokens: %d\n", formatDuration(d), inputTokens, outputTokens)
+func WriteFooter(w io.Writer, d time.Duration) {
+	fmt.Fprintf(w, "%stime: %s\n", prefix, formatDuration(d))
 }
 
 func WriteBlock(w io.Writer, agentName string, bt BlockType, content string) {
@@ -186,7 +174,7 @@ func WriteBlock(w io.Writer, agentName string, bt BlockType, content string) {
 }
 
 func WriteWaitingInput(w io.Writer, agentName string) {
-	fmt.Fprintf(w, "# agent: %s | waiting_user_input\n", agentName)
+	fmt.Fprintf(w, "%sagent: %s | waiting_user_input\n", prefix, agentName)
 }
 
 func formatDuration(d time.Duration) string {
@@ -219,10 +207,10 @@ func splitCSV(s string) []string {
 }
 
 const (
-	ansiReset     = "\033[0m"
-	ansiYellow    = "\033[33m"
-	ansiWhite     = "\033[37m"
-	ansiLightRed  = "\033[91m"
+	ansiReset      = "\033[0m"
+	ansiYellow     = "\033[33m"
+	ansiWhite      = "\033[37m"
+	ansiLightRed   = "\033[91m"
 	ansiLightGreen = "\033[92m"
 )
 
@@ -277,7 +265,7 @@ func (c *ColorWriter) writeColoredLine(line string) {
 		c.w.Write([]byte(ansiYellow + line + ansiReset))
 		return
 	}
-	if strings.HasPrefix(line, "# agent: ") && strings.Contains(line, "waiting_user_input") {
+	if strings.HasPrefix(line, prefix) && strings.Contains(line, "waiting_user_input") {
 		c.w.Write([]byte(ansiYellow + line + ansiReset))
 		return
 	}

@@ -19,7 +19,6 @@ Requires Go 1.26+. Produces the `lite-dev-agent` binary.
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--output` | (all) | Comma-separated list of output sections: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `thinking` |
-| `--devkit-path` | (PATH lookup) | Path to the nixdevkit executable |
 | `--resume` | (none) | Path to a conversation log file to resume from |
 | `--color` | false | Colorize output with ANSI escape codes |
 
@@ -55,6 +54,45 @@ llms:
 | `headers` | no | Extra HTTP headers (takes precedence over `api_key`) |
 | `max_tokens` | no | Context window size (fallback: 128k) |
 
+### MCP Servers
+
+```yaml
+mcp:
+  - name: devkit
+    type: stdio
+    command: "nixdevkit %s"
+  - name: devkit_safe
+    type: stdio
+    command: "nixdevkit %s"
+    allow:
+      - ls
+      - find
+      - read
+      - grep
+  - name: remote
+    type: http
+    url: http://localhost:8080/mcp
+    headers:
+      Authorization: Bearer token123
+    deny:
+      - dangerous_tool
+  - name: prefixed
+    prefix: "fs_"
+    type: stdio
+    command: "nixdevkit %s"
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | yes | Unique identifier. Referenced in agent `tools` and used as the tool group name. |
+| `type` | yes | `stdio` or `http` |
+| `command` | stdio | Command to spawn. `%s` is replaced by `ROOT_PATH`. Supports quoted arguments. |
+| `url` | http | MCP server URL |
+| `headers` | no | HTTP headers (for `http` type) |
+| `prefix` | no | Prefix prepended to all tool names from this server (default: empty) |
+| `allow` | no | Whitelist: only these tools are exposed. Mutually exclusive with `deny`. |
+| `deny` | no | Blacklist: these tools are hidden. Mutually exclusive with `allow`. |
+
 ### Agents
 
 ```yaml
@@ -65,9 +103,9 @@ agents:
     tools: agents
     system_prompt: You are the team manager
   - name: searcher
-    tools: devkit, online
-    expose: File system and web researcher
-    system_prompt: You search files and the web
+    tools: devkit
+    expose: File system researcher
+    system_prompt: You search files
 ```
 
 | Field | Required | Description |
@@ -75,7 +113,7 @@ agents:
 | `name` | yes | Unique identifier |
 | `default` | no | Exactly one must be `true`. Entry-point agent. |
 | `llm` | no | LLM name. Falls back to default LLM. |
-| `tools` | yes | Comma-separated tool groups: `agents`, `devkit`, `online` |
+| `tools` | yes | Comma-separated tool groups: MCP server names, `agents`, `ask` |
 | `expose` | no | If set, this agent is available as a tool to other agents |
 | `system_prompt` | yes | System prompt. Supports `{current_date}` and `{current_time}` variables. |
 
@@ -110,61 +148,61 @@ timeouts:
 
 ### Tool groups
 
-| Group | Description |
-|-------|-------------|
-| `agents` | Exposes all agents with an `expose` field as callable tools |
-| `devkit` | File system tools via nixdevkit MCP server (ls, find, read, create, edit, grep, sed, diff, patch, rm, stat) |
-| `online` | `online_search` (DuckDuckGo) and `online_fetch` (URL → Markdown) |
+| Group | Type | Description |
+|-------|------|-------------|
+| `agents` | built-in | Exposes all agents with an `expose` field as callable tools |
+| `ask` | built-in | Interactive tools: `ask_open_ended`, `ask_multiple_choice`, `ask_exec` |
+| `<mcp name>` | MCP | Any MCP server defined in the `mcp` section |
 
 ## I/O Protocol
 
-Input and output use a structured text format over stdin/stdout.
+Input and output use a structured text format over stdin/stdout. Headers and footers are prefixed with `#!` for visibility.
 
 ### Input
 
 Type your message after the `waiting_user_input` header. End with a blank line:
 
 ```
-# agent: manager | waiting_user_input
+#! agent: manager | waiting_user_input
 What does this project do?
-                                    ← blank line ends input
+                                      <- blank line ends input
 ```
 
 ### Output
 
 ```
-# agent: manager | system_prompt
+#! agent: manager | system_prompt
 You are the team manager
 
-# agent: manager | user_message
+#! agent: manager | user_message
 What does this project do?
 
-# agent: manager | tools_input
+#! agent: manager | tools_input
 Tool name: searcher
 Argument 1 (prompt): What does this project do?
 
-# agent: searcher | system_prompt
+#! agent: searcher | system_prompt
 You search files and the web
 
-# agent: searcher | user_message
+#! agent: searcher | user_message
 What does this project do?
 
-# agent: searcher | agent_response
+#! agent: searcher | agent_response
 This is a Go CLI tool that orchestrates LLM agents.
 
-# time: 1m32s | input_tokens: 1234 | output_tokens: 23424
+#! time: 1m32s
 
-# agent: manager | tools_output
+#! agent: manager | tools_output
 Tool name: searcher
 Response:
 This is a Go CLI tool that orchestrates LLM agents.
 
-# time: 1m32s | input_tokens: 1234 | output_tokens: 23424
+#! time: 1m32s
 
-# agent: manager | agent_response
+#! agent: manager | agent_response
 Based on the research, this project is a Go CLI for orchestrating LLM agents.
 
-# time: 0m45s | input_tokens: 5678 | output_tokens: 312
+#! time: 0m45s
 ```
 
 Block types: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `thinking`.
@@ -192,4 +230,4 @@ make test
 ## Dependencies
 
 Runtime (optional):
-- **[nixdevkit](https://github.com/dgdevel/nixdevkit)** — required only when using `devkit` tools. Must be in `$PATH` or specified via `--devkit-path`.
+- **[nixdevkit](https://github.com/dgdevel/nixdevkit)** — or any MCP server, configured in the `mcp` section. Required at runtime only when referenced by an agent's `tools`.

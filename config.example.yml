@@ -10,6 +10,11 @@ llms:
     api_base: http://127.0.0.1:12345/v1
     model: qwen3.5-9B-Q4_K_M
 
+mcp:
+  - name: devkit
+    type: stdio
+    command: "nixdevkit %s"
+
 agents:
   - name: manager
     default: true
@@ -26,18 +31,17 @@ agents:
       read, and grep to locate relevant files and extract information.
       Answer concisely.
   - name: online_searcher
-    tools: online
+    tools: devkit
     expose: Online researcher
     system_prompt: >
       You search the internet to answer questions. Use online_search for
       web searches and online_fetch to read specific URLs. Answer concisely.
   - name: full_researcher
     llm: thinker
-    tools: devkit, online
+    tools: devkit
     expose: Full researcher with file system and web access
     system_prompt: >
       You research using both the project file system and the internet.
-      Use devkit tools to search files and online tools for web searches.
       Provide thorough, well-sourced answers.
 
 timeouts:

@@ -11,8 +11,20 @@ import (
 
 type Config struct {
 	LLMs     []LLMConfig    `yaml:"llms"`
+	MCPs     []MCPConfig    `yaml:"mcp"`
 	Agents   []AgentConfig  `yaml:"agents"`
 	Timeouts TimeoutConfig  `yaml:"timeouts"`
+}
+
+type MCPConfig struct {
+	Name     string            `yaml:"name"`
+	Prefix   string            `yaml:"prefix"`
+	Type     string            `yaml:"type"`
+	Command  string            `yaml:"command"`
+	URL      string            `yaml:"url"`
+	Headers  map[string]string `yaml:"headers"`
+	Allow    []string          `yaml:"allow"`
+	Deny     []string          `yaml:"deny"`
 }
 
 type LLMConfig struct {
@@ -136,6 +148,26 @@ func (c *Config) validate() error {
 		return fmt.Errorf("expected exactly 1 default agent, got %d", defaultAgents)
 	}
 
+	mcpNames := make(map[string]bool)
+	for _, m := range c.MCPs {
+		if m.Name == "" {
+			return fmt.Errorf("mcp entry missing name")
+		}
+		if m.Type != "stdio" && m.Type != "http" {
+			return fmt.Errorf("mcp %q: type must be \"stdio\" or \"http\", got %q", m.Name, m.Type)
+		}
+		if m.Type == "stdio" && m.Command == "" {
+			return fmt.Errorf("mcp %q: stdio type requires command", m.Name)
+		}
+		if m.Type == "http" && m.URL == "" {
+			return fmt.Errorf("mcp %q: http type requires url", m.Name)
+		}
+		if mcpNames[m.Name] {
+			return fmt.Errorf("duplicate mcp name %q", m.Name)
+		}
+		mcpNames[m.Name] = true
+	}
+
 	return nil
 }
 
@@ -170,6 +202,15 @@ func (c *Config) FindAgent(name string) *AgentConfig {
 	for i := range c.Agents {
 		if c.Agents[i].Name == name {
 			return &c.Agents[i]
+		}
+	}
+	return nil
+}
+
+func (c *Config) FindMCP(name string) *MCPConfig {
+	for i := range c.MCPs {
+		if c.MCPs[i].Name == name {
+			return &c.MCPs[i]
 		}
 	}
 	return nil

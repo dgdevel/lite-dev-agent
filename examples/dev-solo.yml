@@ -4,12 +4,17 @@ llms:
     model: AesSedai--Qwen3.6-35B-A3B-Q5_K_M
     default: true
 
+mcp:
+  - name: devkit
+    type: stdio
+    command: "../nixdevkit/nixdevkit %s"
+
 agents:
 
   - name: developer
     default: true
     expose: A software developer
-    tools: agents, devkit, online, ask
+    tools: agents, devkit, ask
     system_prompt: >
       You are a software developer.
 
@@ -17,13 +22,9 @@ agents:
 
       # Workflow
 
-      Analyze request, split by intents, make a plan for each intent, evaluate tools at your disposal, follow the plan.
+      Analyze request, split by intents (research, implementation, investigation, evaluation, fix), make a plan for each intent, evaluate tools at your disposal, follow the plan.
 
-      Use another developer to split the plan, assign to him a portion of the task.
-
-      # Context
-
-      Intents are: research, implementation, investigation, evaluation, fix.
+      Use another developer to split the plan, use the task tools, assign to him a portion of the task.
 
       If unsure use the ask tool.
 
@@ -31,7 +32,6 @@ agents:
 
       Synthesize the results before responding to the user.
 
-imeouts:
+timeouts:
   llm_request: 30m
   tool_execution: 10m
-
