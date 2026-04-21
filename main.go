@@ -23,6 +23,7 @@ func main() {
 	outputFlag := flag.String("output", "", "comma-separated list of output sections to emit")
 	resumeFlag := flag.String("resume", "", "path to conversation log to resume from")
 	colorFlag := flag.String("color", "true", "colorize output with ANSI escape codes (true|false)")
+	promptFlag := flag.String("prompt", "", "send a prompt to the default agent and exit immediately")
 	flag.Parse()
 
 	rootPath := "."
@@ -140,7 +141,9 @@ func main() {
 			case "agents":
 				agentRegistry.Register("agents", agentToolProvider)
 			case "ask":
-				agentRegistry.Register("ask", tools.NewAskProvider(ac.Name, agentWriter, readInputFn))
+				if *promptFlag == "" {
+					agentRegistry.Register("ask", tools.NewAskProvider(ac.Name, agentWriter, readInputFn))
+				}
 			default:
 				if mp, ok := mcpProviders[toolGroup]; ok {
 					agentRegistry.Register(toolGroup, mp)
@@ -190,6 +193,21 @@ func main() {
 		<-sigCh
 		cancel()
 	}()
+
+	if *promptFlag != "" {
+		result, err := mainAgent.Run(ctx, agent.RunOptions{
+			UserMessage: *promptFlag,
+			History:     history,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		if result != nil {
+			history = mainAgent.History
+		}
+		return
+	}
 
 	for {
 		protocol.WriteWaitingInput(stdoutWriter, mainAgent.Config.Name, 0)

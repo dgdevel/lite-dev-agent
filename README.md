@@ -21,6 +21,7 @@ Requires Go 1.26+. Produces the `lite-dev-agent` binary.
 | `--output` | (all) | Comma-separated list of output sections: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `tools_definition`, `thinking`, `token_stats` |
 | `--resume` | (none) | Path to a conversation log file to resume from |
 | `--color` | true | Colorize output with ANSI escape codes (`true` or `false`) |
+| `--prompt` | (none) | Send a prompt to the default agent and exit immediately (non-interactive mode) |
 
 `ROOT_PATH` is the target project directory. Defaults to current directory.
 
@@ -213,6 +214,24 @@ manager          prompt: 2500     completion: 180
 Block types: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `tools_definition`, `thinking`, `token_stats`.
 
 Use `--output` to filter which blocks are emitted. Example: `--output agent_response` shows only the final responses.
+
+## Non-Interactive Mode
+
+Use `--prompt` to run a single agent round without interactive input:
+
+```
+./lite-dev-agent --prompt "What does this project do?" /path/to/project
+```
+
+When `--prompt` is set:
+
+- The prompt is sent immediately to the default agent
+- The `ask` tool group is disabled (the agent cannot ask interactive questions)
+- The program terminates after the agent completes its response
+- Stdin is not read
+- `waiting_user_input` is never emitted
+
+This is useful for scripting, piping, or one-shot queries where interactive tools are not needed.
 
 ## Token Statistics
 
