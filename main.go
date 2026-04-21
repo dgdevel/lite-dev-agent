@@ -22,7 +22,7 @@ import (
 func main() {
 	outputFlag := flag.String("output", "", "comma-separated list of output sections to emit")
 	resumeFlag := flag.String("resume", "", "path to conversation log to resume from")
-	colorFlag := flag.Bool("color", false, "colorize output with ANSI escape codes")
+	colorFlag := flag.String("color", "true", "colorize output with ANSI escape codes (true|false)")
 	flag.Parse()
 
 	rootPath := "."
@@ -61,7 +61,8 @@ func main() {
 
 	var colorWriter *protocol.ColorWriter
 	stdoutWriter := io.Writer(os.Stdout)
-	if *colorFlag {
+	colorEnabled := *colorFlag == "true"
+	if colorEnabled {
 		colorWriter = protocol.NewColorWriter(os.Stdout)
 		stdoutWriter = colorWriter
 	}

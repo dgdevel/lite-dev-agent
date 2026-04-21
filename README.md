@@ -20,7 +20,7 @@ Requires Go 1.26+. Produces the `lite-dev-agent` binary.
 |--------|---------|-------------|
 | `--output` | (all) | Comma-separated list of output sections: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `tools_definition`, `thinking`, `token_stats` |
 | `--resume` | (none) | Path to a conversation log file to resume from |
-| `--color` | false | Colorize output with ANSI escape codes |
+| `--color` | true | Colorize output with ANSI escape codes (`true` or `false`) |
 
 `ROOT_PATH` is the target project directory. Defaults to current directory.
 
