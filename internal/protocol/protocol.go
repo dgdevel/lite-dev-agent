@@ -198,6 +198,25 @@ func WriteWaitingInput(w io.Writer, agentName string, level int) {
 	fmt.Fprintf(w, "%sagent: %s | level: %d | waiting_user_input\n", prefix, agentName, level)
 }
 
+func WriteBeginConversation(w io.Writer, filePath string, isResume bool) {
+	label := "begin_conversation"
+	if isResume {
+		label = "resume_conversation"
+	}
+	fmt.Fprintf(w, "%s%s | file: %s\n", prefix, label, filePath)
+}
+
+func WriteEndConversation(w io.Writer, filePath string) {
+	fmt.Fprintf(w, "%send_conversation | file: %s\n", prefix, filePath)
+}
+
+func IsConversationMarker(line string) bool {
+	trimmed := strings.TrimPrefix(line, prefix)
+	return strings.HasPrefix(trimmed, "begin_conversation") ||
+		strings.HasPrefix(trimmed, "resume_conversation") ||
+		strings.HasPrefix(trimmed, "end_conversation")
+}
+
 func formatDuration(d time.Duration) string {
 	h := int(d.Hours())
 	m := int(d.Minutes()) % 60
@@ -286,6 +305,10 @@ func (c *ColorWriter) writeColoredLine(line string) {
 		return
 	}
 	if IsFooter(line) {
+		c.w.Write([]byte(ansiYellow + line + ansiReset))
+		return
+	}
+	if IsConversationMarker(line) {
 		c.w.Write([]byte(ansiYellow + line + ansiReset))
 		return
 	}

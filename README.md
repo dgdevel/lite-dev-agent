@@ -172,6 +172,8 @@ What does this project do?
 ### Output
 
 ```
+#! begin_conversation | file: .lite-dev-agent/conversations/2026-04-21_14-30-00.txt
+
 #! agent: manager | level: 0 | system_prompt
 You are the team manager
 
@@ -209,9 +211,19 @@ Based on the research, this project is a Go CLI for orchestrating LLM agents.
 manager          prompt: 2500     completion: 180
 ├── searcher     prompt: 1200     completion: 95
 └── analyst      prompt: 800      completion: 60
+
+#! end_conversation | file: .lite-dev-agent/conversations/2026-04-21_14-30-00.txt
 ```
 
 Block types: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `tools_definition`, `thinking`, `token_stats`.
+
+Every session is bracketed by a `begin_conversation` line at the start and an `end_conversation` line at the end. When using `--resume`, the opening line uses `resume_conversation` instead:
+
+```
+#! resume_conversation | file: .lite-dev-agent/conversations/2026-04-21_14-30-00.txt
+...
+#! end_conversation | file: .lite-dev-agent/conversations/2026-04-21_14-30-00.txt
+```
 
 Use `--output` to filter which blocks are emitted. Example: `--output agent_response` shows only the final responses.
 

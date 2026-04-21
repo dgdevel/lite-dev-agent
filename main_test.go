@@ -246,3 +246,132 @@ func TestPromptFlagWithEmptyString(t *testing.T) {
 		t.Fatal("empty -prompt should start interactive mode (hang reading stdin)")
 	}
 }
+
+func TestConversationMarkersInPromptMode(t *testing.T) {
+	buildBinary(t)
+
+	server := newMockLLMServer(t, "response")
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	writeTestConfig(t, tmpDir, server.URL)
+
+	cmd := exec.Command(binaryPath, "--prompt", "hello", "--color", "false", tmpDir)
+	cmd.Stdin = strings.NewReader("")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("command failed: %v\noutput:\n%s", err, output)
+	}
+
+	stdout := string(output)
+	if !strings.Contains(stdout, "begin_conversation") {
+		t.Fatalf("expected begin_conversation in output:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "end_conversation") {
+		t.Fatalf("expected end_conversation in output:\n%s", stdout)
+	}
+}
+
+func TestConversationMarkersBeginBeforeEnd(t *testing.T) {
+	buildBinary(t)
+
+	server := newMockLLMServer(t, "response")
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	writeTestConfig(t, tmpDir, server.URL)
+
+	cmd := exec.Command(binaryPath, "--prompt", "hello", "--color", "false", tmpDir)
+	cmd.Stdin = strings.NewReader("")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("command failed: %v\noutput:\n%s", err, output)
+	}
+
+	stdout := string(output)
+	beginIdx := strings.Index(stdout, "begin_conversation")
+	endIdx := strings.Index(stdout, "end_conversation")
+	if beginIdx == -1 || endIdx == -1 {
+		t.Fatalf("missing markers:\n%s", stdout)
+	}
+	if beginIdx > endIdx {
+		t.Fatalf("begin_conversation should appear before end_conversation:\n%s", stdout)
+	}
+}
+
+func TestConversationMarkersWrittenToLogFile(t *testing.T) {
+	buildBinary(t)
+
+	server := newMockLLMServer(t, "response")
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	writeTestConfig(t, tmpDir, server.URL)
+
+	cmd := exec.Command(binaryPath, "--prompt", "hello", "--color", "false", tmpDir)
+	cmd.Stdin = strings.NewReader("")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("command failed: %v\noutput:\n%s", err, output)
+	}
+
+	_ = output
+
+	convDir := filepath.Join(tmpDir, ".lite-dev-agent", "conversations")
+	entries, err := os.ReadDir(convDir)
+	if err != nil {
+		t.Fatalf("read conversations dir: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("no conversation log files found")
+	}
+
+	logPath := filepath.Join(convDir, entries[0].Name())
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log file: %v", err)
+	}
+
+	logContent := string(logData)
+	if !strings.Contains(logContent, "begin_conversation") {
+		t.Fatalf("expected begin_conversation in log:\n%s", logContent)
+	}
+	if !strings.Contains(logContent, "end_conversation") {
+		t.Fatalf("expected end_conversation in log:\n%s", logContent)
+	}
+}
+
+func TestConversationMarkersWithResume(t *testing.T) {
+	buildBinary(t)
+
+	tmpDir := t.TempDir()
+	convDir := filepath.Join(tmpDir, ".lite-dev-agent", "conversations")
+	os.MkdirAll(convDir, 0755)
+
+	logPath := filepath.Join(convDir, "test-log.txt")
+	logContent := "#! begin_conversation | file: \n#! agent: dev | level: 0 | user_message\nhello\n#! time: 1s\n#! agent: dev | level: 0 | agent_response\nhi\n#! time: 1s\n#! end_conversation | file: \n"
+	os.WriteFile(logPath, []byte(logContent), 0644)
+
+	server := newMockLLMServer(t, "response")
+	defer server.Close()
+
+	writeTestConfig(t, tmpDir, server.URL)
+
+	cmd := exec.Command(binaryPath, "--resume", logPath, "--color", "false", tmpDir)
+	cmd.Stdin = strings.NewReader("test\n\n")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("command failed: %v\noutput:\n%s", err, output)
+	}
+
+	stdout := string(output)
+	if !strings.Contains(stdout, "resume_conversation") {
+		t.Fatalf("expected resume_conversation in output:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "end_conversation") {
+		t.Fatalf("expected end_conversation in output:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "begin_conversation") {
+		t.Fatalf("should NOT contain begin_conversation (should be resume_conversation):\n%s", stdout)
+	}
+}

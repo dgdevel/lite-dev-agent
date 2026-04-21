@@ -389,3 +389,69 @@ func TestColorWriterNoColorPassthrough(t *testing.T) {
 		t.Fatalf("should have reset codes: %q", got)
 	}
 }
+
+func TestWriteBeginConversation(t *testing.T) {
+	var buf bytes.Buffer
+	WriteBeginConversation(&buf, "/path/to/log.txt", false)
+	got := buf.String()
+	want := "#! begin_conversation | file: /path/to/log.txt\n"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestWriteBeginConversationResume(t *testing.T) {
+	var buf bytes.Buffer
+	WriteBeginConversation(&buf, "/path/to/log.txt", true)
+	got := buf.String()
+	want := "#! resume_conversation | file: /path/to/log.txt\n"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestWriteEndConversation(t *testing.T) {
+	var buf bytes.Buffer
+	WriteEndConversation(&buf, "/path/to/log.txt")
+	got := buf.String()
+	want := "#! end_conversation | file: /path/to/log.txt\n"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestIsConversationMarker(t *testing.T) {
+	cases := []struct {
+		line string
+		want bool
+	}{
+		{"#! begin_conversation | file: /path", true},
+		{"#! resume_conversation | file: /path", true},
+		{"#! end_conversation | file: /path", true},
+		{"#! agent: mgr | level: 0 | system_prompt", false},
+		{"#! time: 1s", false},
+		{"not a marker", false},
+	}
+	for _, c := range cases {
+		got := IsConversationMarker(c.line)
+		if got != c.want {
+			t.Errorf("IsConversationMarker(%q) = %v, want %v", c.line, got, c.want)
+		}
+	}
+}
+
+func TestColorWriterConversationMarker(t *testing.T) {
+	var buf bytes.Buffer
+	cw := NewColorWriter(&buf)
+	cw.Write([]byte("#! begin_conversation | file: /tmp/log.txt\n"))
+	cw.Write([]byte("#! agent: mgr | level: 0 | system_prompt\nHello\n"))
+	cw.Write([]byte("#! end_conversation | file: /tmp/log.txt\n"))
+	cw.Flush()
+	got := buf.String()
+	if strings.Count(got, ansiYellow) < 2 {
+		t.Fatalf("conversation markers should be yellow: %q", got)
+	}
+	if !strings.Contains(got, "begin_conversation") || !strings.Contains(got, "end_conversation") {
+		t.Fatalf("markers should be present: %q", got)
+	}
+}

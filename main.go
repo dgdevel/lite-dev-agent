@@ -109,6 +109,30 @@ func main() {
 		fmt.Fprintf(os.Stderr, "conversation log: %s\n", convLog.Path())
 	}
 
+	var convFilePath string
+	if convLog != nil {
+		convFilePath = convLog.Path()
+	}
+	isResume := resumePath != ""
+
+	writeConversationBegin := func(w io.Writer) {
+		protocol.WriteBeginConversation(w, convFilePath, isResume)
+	}
+	writeConversationEnd := func(w io.Writer) {
+		protocol.WriteEndConversation(w, convFilePath)
+	}
+
+	writeConversationBegin(stdoutWriter)
+	if convLog != nil {
+		writeConversationBegin(convLog)
+	}
+	defer func() {
+		writeConversationEnd(stdoutWriter)
+		if convLog != nil {
+			writeConversationEnd(convLog)
+		}
+	}()
+
 	stdin := bufio.NewReader(os.Stdin)
 	readInputFn := func() (string, error) {
 		return readInput(stdin)
