@@ -349,7 +349,7 @@ func TestConversationMarkersWithResume(t *testing.T) {
 	os.MkdirAll(convDir, 0755)
 
 	logPath := filepath.Join(convDir, "test-log.txt")
-	logContent := "#! begin_conversation | file: \n#! agent: dev | level: 0 | user_message\nhello\n#! time: 1s\n#! agent: dev | level: 0 | agent_response\nhi\n#! time: 1s\n#! end_conversation | file: \n"
+	logContent := "#!2025-01-15 10:30:00 begin_conversation | file: \n#!2025-01-15 10:30:01 agent: dev | level: 0 | user_message\nhello\n#!2025-01-15 10:30:02 time: 1s\n#!2025-01-15 10:30:03 agent: dev | level: 0 | agent_response\nhi\n#!2025-01-15 10:30:04 time: 1s\n#!2025-01-15 10:30:05 end_conversation | file: \n"
 	os.WriteFile(logPath, []byte(logContent), 0644)
 
 	server := newMockLLMServer(t, "response")

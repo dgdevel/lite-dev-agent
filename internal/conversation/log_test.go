@@ -68,16 +68,16 @@ func TestTeeWriter(t *testing.T) {
 }
 
 func TestParseBasic(t *testing.T) {
-	input := `#! agent: manager | level: 0 | system_prompt
+	input := `#!2025-01-15 10:30:00 agent: manager | level: 0 | system_prompt
 You are the manager
 
-#! agent: manager | level: 0 | user_message
+#!2025-01-15 10:30:01 agent: manager | level: 0 | user_message
 Hello
 
-#! agent: manager | level: 0 | agent_response
+#!2025-01-15 10:30:02 agent: manager | level: 0 | agent_response
 Hi there
 
-#! time: 5s
+#!2025-01-15 10:30:03 time: 5s
 `
 	blocks, err := Parse(strings.NewReader(input))
 	if err != nil {
@@ -117,38 +117,38 @@ Hi there
 }
 
 func TestParseWithToolCalls(t *testing.T) {
-	input := `#! agent: manager | level: 0 | system_prompt
+	input := `#!2025-01-15 10:30:00 agent: manager | level: 0 | system_prompt
 You manage
 
-#! agent: manager | level: 0 | user_message
+#!2025-01-15 10:30:01 agent: manager | level: 0 | user_message
 Search for x
 
-#! agent: manager | level: 0 | tools_input
+#!2025-01-15 10:30:02 agent: manager | level: 0 | tools_input
 Tool name: worker
 Argument 1 (prompt): Search for x
 
-#! agent: worker | level: 1 | system_prompt
+#!2025-01-15 10:30:03 agent: worker | level: 1 | system_prompt
 You search
 
-#! agent: worker | level: 1 | user_message
+#!2025-01-15 10:30:04 agent: worker | level: 1 | user_message
 Search for x
 
-#! agent: worker | level: 1 | agent_response
+#!2025-01-15 10:30:05 agent: worker | level: 1 | agent_response
 Found x
 
-#! time: 2s
+#!2025-01-15 10:30:06 time: 2s
 
-#! agent: manager | level: 0 | tools_output
+#!2025-01-15 10:30:07 agent: manager | level: 0 | tools_output
 Tool name: worker
 Response:
 Found x
 
-#! time: 3s
+#!2025-01-15 10:30:08 time: 3s
 
-#! agent: manager | level: 0 | agent_response
+#!2025-01-15 10:30:09 agent: manager | level: 0 | agent_response
 Here are the results
 
-#! time: 5s
+#!2025-01-15 10:30:10 time: 5s
 `
 	blocks, err := Parse(strings.NewReader(input))
 	if err != nil {
@@ -163,13 +163,13 @@ Here are the results
 func TestParseFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.txt")
-	content := `#! agent: test | level: 0 | system_prompt
+	content := `#!2025-01-15 10:30:00 agent: test | level: 0 | system_prompt
 Hello
 
-#! agent: test | level: 0 | user_message
+#!2025-01-15 10:30:01 agent: test | level: 0 | user_message
 Hi
 
-#! agent: test | level: 0 | agent_response
+#!2025-01-15 10:30:02 agent: test | level: 0 | agent_response
 Hey
 `
 	os.WriteFile(path, []byte(content), 0644)

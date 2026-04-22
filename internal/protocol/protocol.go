@@ -8,7 +8,19 @@ import (
 	"time"
 )
 
-const prefix = "#! "
+const marker = "#!"
+
+func formatPrefix() string {
+	return marker + time.Now().Format("2006-01-02 15:04:05") + " "
+}
+
+func stripTimestamp(line string) string {
+	line = strings.TrimPrefix(line, marker)
+	if len(line) >= 20 && line[4] == '-' && line[7] == '-' && line[10] == ' ' && line[13] == ':' && line[16] == ':' && line[19] == ' ' {
+		return line[20:]
+	}
+	return line
+}
 
 type BlockType int
 
@@ -85,7 +97,7 @@ type Footer struct {
 }
 
 func ParseHeader(line string) (Header, bool) {
-	line = strings.TrimPrefix(line, prefix)
+	line = stripTimestamp(line)
 	parts := strings.SplitN(line, " | ", 3)
 	if len(parts) != 3 {
 		return Header{}, false
@@ -117,7 +129,7 @@ func ParseHeader(line string) (Header, bool) {
 }
 
 func ParseFooter(line string) (Footer, bool) {
-	line = strings.TrimPrefix(line, prefix)
+	line = stripTimestamp(line)
 	if !strings.HasPrefix(line, "time:") {
 		return Footer{}, false
 	}
@@ -179,11 +191,11 @@ func (f *OutputFilter) Enabled(bt BlockType) bool {
 }
 
 func WriteHeader(w io.Writer, agentName string, level int, bt BlockType) {
-	fmt.Fprintf(w, "%sagent: %s | level: %d | %s\n", prefix, agentName, level, bt)
+	fmt.Fprintf(w, "%sagent: %s | level: %d | %s\n", formatPrefix(), agentName, level, bt)
 }
 
 func WriteFooter(w io.Writer, d time.Duration) {
-	fmt.Fprintf(w, "%stime: %s\n", prefix, formatDuration(d))
+	fmt.Fprintf(w, "%stime: %s\n", formatPrefix(), formatDuration(d))
 }
 
 func WriteBlock(w io.Writer, agentName string, level int, bt BlockType, content string) {
@@ -195,7 +207,7 @@ func WriteBlock(w io.Writer, agentName string, level int, bt BlockType, content 
 }
 
 func WriteWaitingInput(w io.Writer, agentName string, level int) {
-	fmt.Fprintf(w, "%sagent: %s | level: %d | waiting_user_input\n", prefix, agentName, level)
+	fmt.Fprintf(w, "%sagent: %s | level: %d | waiting_user_input\n", formatPrefix(), agentName, level)
 }
 
 func WriteBeginConversation(w io.Writer, filePath string, isResume bool) {
@@ -203,15 +215,15 @@ func WriteBeginConversation(w io.Writer, filePath string, isResume bool) {
 	if isResume {
 		label = "resume_conversation"
 	}
-	fmt.Fprintf(w, "%s%s | file: %s\n", prefix, label, filePath)
+	fmt.Fprintf(w, "%s%s | file: %s\n", formatPrefix(), label, filePath)
 }
 
 func WriteEndConversation(w io.Writer, filePath string) {
-	fmt.Fprintf(w, "%send_conversation | file: %s\n", prefix, filePath)
+	fmt.Fprintf(w, "%send_conversation | file: %s\n", formatPrefix(), filePath)
 }
 
 func IsConversationMarker(line string) bool {
-	trimmed := strings.TrimPrefix(line, prefix)
+	trimmed := stripTimestamp(line)
 	return strings.HasPrefix(trimmed, "begin_conversation") ||
 		strings.HasPrefix(trimmed, "resume_conversation") ||
 		strings.HasPrefix(trimmed, "end_conversation")
@@ -312,7 +324,7 @@ func (c *ColorWriter) writeColoredLine(line string) {
 		c.w.Write([]byte(ansiYellow + line + ansiReset))
 		return
 	}
-	if strings.HasPrefix(line, prefix) && strings.Contains(line, "waiting_user_input") {
+	if strings.HasPrefix(line, marker) && strings.Contains(line, "waiting_user_input") {
 		c.w.Write([]byte(ansiYellow + line + ansiReset))
 		return
 	}
