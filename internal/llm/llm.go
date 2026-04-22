@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -152,6 +153,58 @@ type modelsResponse struct {
 	Data []modelInfo `json:"data"`
 }
 
+const maxRetries = 19
+
+func generateFibonacciBackoff(n int) []time.Duration {
+	durs := make([]time.Duration, n)
+	a, b := 5, 8
+	for i := 0; i < n; i++ {
+		durs[i] = time.Duration(a) * time.Second
+		a, b = b, a+b
+	}
+	return durs
+}
+
+var fibonacciBackoff = generateFibonacciBackoff(maxRetries)
+
+func getRetryAfter(resp *http.Response) time.Duration {
+	ra := resp.Header.Get("Retry-After")
+	if ra == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(ra); err == nil && secs > 0 {
+		return time.Duration(secs)*time.Second + time.Second
+	}
+	if t, err := http.ParseTime(ra); err == nil {
+		d := time.Until(t) + time.Second
+		if d > 0 {
+			return d
+		}
+	}
+	return 0
+}
+
+func getBackoff(attempt int, resp *http.Response) time.Duration {
+	if ra := getRetryAfter(resp); ra > 0 {
+		return ra
+	}
+	if attempt < len(fibonacciBackoff) {
+		return fibonacciBackoff[attempt]
+	}
+	return fibonacciBackoff[len(fibonacciBackoff)-1]
+}
+
+func waitWithBackoff(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 func (c *Client) ModelContextWindow(ctx context.Context) int {
 	if c.maxTokens > 0 {
 		return c.maxTokens
@@ -190,16 +243,37 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, tools [
 		return "", nil, 0, 0, fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.apiBase+"/chat/completions", bytes.NewReader(data))
-	if err != nil {
-		return "", nil, 0, 0, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	c.setAuth(req)
+	var resp *http.Response
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.apiBase+"/chat/completions", bytes.NewReader(data))
+		if err != nil {
+			return "", nil, 0, 0, fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		c.setAuth(req)
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", nil, 0, 0, fmt.Errorf("send request: %w", err)
+		resp, err = c.httpClient.Do(req)
+		if err != nil {
+			return "", nil, 0, 0, fmt.Errorf("send request: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests && attempt < maxRetries {
+			respData, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			backoff := getBackoff(attempt, resp)
+			fmt.Fprintf(os.Stderr, "LLM rate limited (429), retrying in %v (attempt %d/%d): %s\n", backoff, attempt+1, maxRetries, string(respData))
+			if err := waitWithBackoff(ctx, backoff); err != nil {
+				return "", nil, 0, 0, err
+			}
+			continue
+		}
+		if resp.StatusCode == http.StatusTooManyRequests {
+			respData, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			fmt.Fprintf(os.Stderr, "LLM rate limited (429), max retries (%d) exhausted: %s\n", maxRetries, string(respData))
+			os.Exit(1)
+		}
+		break
 	}
 	defer resp.Body.Close()
 
@@ -253,16 +327,37 @@ func (c *Client) ChatCompletionStream(ctx context.Context, messages []Message, t
 		return fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.apiBase+"/chat/completions", bytes.NewReader(data))
-	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	c.setAuth(req)
+	var resp *http.Response
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.apiBase+"/chat/completions", bytes.NewReader(data))
+		if err != nil {
+			return fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		c.setAuth(req)
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("send request: %w", err)
+		resp, err = c.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("send request: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests && attempt < maxRetries {
+			respBody, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			backoff := getBackoff(attempt, resp)
+			fmt.Fprintf(os.Stderr, "LLM rate limited (429), retrying in %v (attempt %d/%d): %s\n", backoff, attempt+1, maxRetries, string(respBody))
+			if err := waitWithBackoff(ctx, backoff); err != nil {
+				return err
+			}
+			continue
+		}
+		if resp.StatusCode == http.StatusTooManyRequests {
+			respBody, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			fmt.Fprintf(os.Stderr, "LLM rate limited (429), max retries (%d) exhausted: %s\n", maxRetries, string(respBody))
+			os.Exit(1)
+		}
+		break
 	}
 	defer resp.Body.Close()
 
