@@ -10,4 +10,4 @@ lint:
 	go vet ./...
 
 clean:
-	rm -f lite-dev-agent
+	rm -f lite-dev-agent lite-dev-agent-test
