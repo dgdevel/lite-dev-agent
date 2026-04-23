@@ -379,8 +379,8 @@ func TestColorWriterWaitingInput(t *testing.T) {
 	cw.Write([]byte("#!2025-01-15 10:30:00 agent: mgr | level: 0 | waiting_user_input\n"))
 	cw.Flush()
 	got := buf.String()
-	if !strings.Contains(got, ansiYellow) {
-		t.Fatalf("waiting_user_input should be yellow: %q", got)
+	if !strings.Contains(got, ansiCyan) {
+		t.Fatalf("waiting_user_input should be cyan: %q", got)
 	}
 }
 
@@ -465,5 +465,70 @@ func TestColorWriterConversationMarker(t *testing.T) {
 	}
 	if !strings.Contains(got, "begin_conversation") || !strings.Contains(got, "end_conversation") {
 		t.Fatalf("markers should be present: %q", got)
+	}
+}
+
+func TestColorNameToANSI(t *testing.T) {
+	cases := []struct {
+		name string
+		want string
+	}{
+		{"black", "\033[30m"},
+		{"red", "\033[31m"},
+		{"green", "\033[32m"},
+		{"yellow", "\033[33m"},
+		{"blue", "\033[34m"},
+		{"magenta", "\033[35m"},
+		{"cyan", "\033[36m"},
+		{"white", "\033[37m"},
+		{"light_red", "\033[91m"},
+		{"light_green", "\033[92m"},
+		{"light_cyan", "\033[96m"},
+		{"unknown", ""},
+	}
+	for _, c := range cases {
+		got := ColorNameToANSI(c.name)
+		if got != c.want {
+			t.Errorf("ColorNameToANSI(%q) = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestDefaultBlockStyles(t *testing.T) {
+	styles := DefaultBlockStyles()
+	if len(styles) != 9 {
+		t.Fatalf("expected 9 block styles, got %d", len(styles))
+	}
+	if styles[BlockWaitingInput].ANSI != ansiCyan {
+		t.Fatalf("waiting_user_input should be cyan, got %q", styles[BlockWaitingInput].ANSI)
+	}
+	if styles[BlockAgentResponse].ANSI != ansiWhite {
+		t.Fatalf("agent_response should be white, got %q", styles[BlockAgentResponse].ANSI)
+	}
+}
+
+func TestNewColorWriterWithStyles(t *testing.T) {
+	customStyles := map[BlockType]BlockStyle{
+		BlockAgentResponse: {ANSI: ansiCyan, Bold: true},
+	}
+	var buf bytes.Buffer
+	cw := NewColorWriterWithStyles(&buf, customStyles)
+	cw.Write([]byte("#!2025-01-15 10:30:00 agent: mgr | level: 0 | agent_response\n"))
+	cw.Write([]byte("Hello\n"))
+	cw.Flush()
+	got := buf.String()
+	if !strings.Contains(got, ansiBold+ansiCyan) {
+		t.Fatalf("agent_response header should be bold cyan: %q", got)
+	}
+}
+
+func TestNewColorWriterWithStylesNil(t *testing.T) {
+	var buf bytes.Buffer
+	cw := NewColorWriterWithStyles(&buf, nil)
+	cw.Write([]byte("#!2025-01-15 10:30:00 agent: mgr | level: 0 | waiting_user_input\n"))
+	cw.Flush()
+	got := buf.String()
+	if !strings.Contains(got, ansiCyan) {
+		t.Fatalf("nil styles should use defaults (cyan for waiting_user_input): %q", got)
 	}
 }

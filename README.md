@@ -147,6 +147,54 @@ timeouts:
 | `llm_request` | 30m | Max wait for a single LLM response |
 | `tool_execution` | 10m | Max time for a single tool call |
 
+### Block colors
+
+Customize the color and boldness of each output block type:
+
+```yaml
+blocks:
+  system_prompt:
+    color: yellow
+  user_message:
+    color: yellow
+  agent_response:
+    color: white
+  tools_input:
+    color: light_green
+  tools_output:
+    color: light_green
+  tools_definition:
+    color: yellow
+  agent_thinking:
+    color: light_red
+  token_stats:
+    color: light_cyan
+  waiting_user_input:
+    color: cyan
+    bold: true
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `color` | (see below) | Color name for the block |
+| `bold` | false | Use bold text |
+
+All block types are optional. Unset blocks use defaults:
+
+| Block | Default color |
+|-------|--------------|
+| `system_prompt` | `yellow` |
+| `user_message` | `yellow` |
+| `agent_response` | `white` |
+| `tools_input` | `light_green` |
+| `tools_output` | `light_green` |
+| `tools_definition` | `yellow` |
+| `agent_thinking` | `light_red` |
+| `token_stats` | `light_cyan` |
+| `waiting_user_input` | `cyan` |
+
+Available colors: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `light_black`, `light_red`, `light_green`, `light_yellow`, `light_blue`, `light_magenta`, `light_cyan`, `light_white`.
+
 ### Tool groups
 
 | Group | Type | Description |

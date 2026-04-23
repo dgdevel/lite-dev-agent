@@ -51,3 +51,23 @@ timeouts:
   llm_request: 30m
   tool_execution: 10m
 
+blocks:
+  system_prompt:
+    color: yellow
+  user_message:
+    color: yellow
+  agent_response:
+    color: white
+  tools_input:
+    color: light_green
+  tools_output:
+    color: light_green
+  tools_definition:
+    color: yellow
+  agent_thinking:
+    color: light_red
+  token_stats:
+    color: light_cyan
+  waiting_user_input:
+    color: cyan
+

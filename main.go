@@ -64,7 +64,24 @@ func main() {
 	stdoutWriter := io.Writer(os.Stdout)
 	colorEnabled := *colorFlag == "true"
 	if colorEnabled {
-		colorWriter = protocol.NewColorWriter(os.Stdout)
+		blockStyles := protocol.DefaultBlockStyles()
+		for name, override := range cfg.Blocks {
+			bt, ok := protocol.ParseBlockType(name)
+			if !ok {
+				continue
+			}
+			style := blockStyles[bt]
+			if override.Color != "" {
+				if ansi := protocol.ColorNameToANSI(override.Color); ansi != "" {
+					style.ANSI = ansi
+				}
+			}
+			if override.Bold {
+				style.Bold = true
+			}
+			blockStyles[bt] = style
+		}
+		colorWriter = protocol.NewColorWriterWithStyles(os.Stdout, blockStyles)
 		stdoutWriter = colorWriter
 	}
 

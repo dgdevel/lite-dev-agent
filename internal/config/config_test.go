@@ -752,3 +752,61 @@ agents:
 		t.Fatalf("deny: %v", cfg.MCPs[1].Deny)
 	}
 }
+
+func TestBlocksConfig(t *testing.T) {
+	dir := t.TempDir()
+	writeTestConfig(t, dir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: test
+blocks:
+  waiting_user_input:
+    color: cyan
+    bold: true
+  agent_response:
+    color: light_green
+`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Blocks) != 2 {
+		t.Fatalf("expected 2 block overrides, got %d", len(cfg.Blocks))
+	}
+	ws := cfg.Blocks["waiting_user_input"]
+	if ws.Color != "cyan" || !ws.Bold {
+		t.Fatalf("waiting_user_input: got color=%q bold=%v", ws.Color, ws.Bold)
+	}
+	as := cfg.Blocks["agent_response"]
+	if as.Color != "light_green" || as.Bold {
+		t.Fatalf("agent_response: got color=%q bold=%v", as.Color, as.Bold)
+	}
+}
+
+func TestBlocksConfigEmpty(t *testing.T) {
+	dir := t.TempDir()
+	writeTestConfig(t, dir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: test
+`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Blocks) != 0 {
+		t.Fatalf("expected 0 block overrides, got %d", len(cfg.Blocks))
+	}
+}

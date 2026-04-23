@@ -265,20 +265,65 @@ const (
 	ansiLightRed   = "\033[91m"
 	ansiLightGreen = "\033[92m"
 	ansiLightBlue  = "\033[96m"
+	ansiCyan       = "\033[36m"
+	ansiBold       = "\033[1m"
 )
 
-func blockColor(bt BlockType) string {
-	switch bt {
-	case BlockAgentResponse:
-		return ansiWhite
-	case BlockThinking:
-		return ansiLightRed
-	case BlockToolsInput, BlockToolsOutput:
-		return ansiLightGreen
-	case BlockTokenStats:
-		return ansiLightBlue
+type BlockStyle struct {
+	ANSI string
+	Bold bool
+}
+
+func ColorNameToANSI(name string) string {
+	switch name {
+	case "black":
+		return "\033[30m"
+	case "red":
+		return "\033[31m"
+	case "green":
+		return "\033[32m"
+	case "yellow":
+		return "\033[33m"
+	case "blue":
+		return "\033[34m"
+	case "magenta":
+		return "\033[35m"
+	case "cyan":
+		return "\033[36m"
+	case "white":
+		return "\033[37m"
+	case "light_black":
+		return "\033[90m"
+	case "light_red":
+		return "\033[91m"
+	case "light_green":
+		return "\033[92m"
+	case "light_yellow":
+		return "\033[93m"
+	case "light_blue":
+		return "\033[94m"
+	case "light_magenta":
+		return "\033[95m"
+	case "light_cyan":
+		return "\033[96m"
+	case "light_white":
+		return "\033[97m"
 	default:
-		return ansiYellow
+		return ""
+	}
+}
+
+func DefaultBlockStyles() map[BlockType]BlockStyle {
+	return map[BlockType]BlockStyle{
+		BlockAgentResponse:   {ANSI: ansiWhite},
+		BlockThinking:        {ANSI: ansiLightRed},
+		BlockToolsInput:      {ANSI: ansiLightGreen},
+		BlockToolsOutput:     {ANSI: ansiLightGreen},
+		BlockTokenStats:      {ANSI: ansiLightBlue},
+		BlockSystemPrompt:    {ANSI: ansiYellow},
+		BlockUserMessage:     {ANSI: ansiYellow},
+		BlockToolsDefinition: {ANSI: ansiYellow},
+		BlockWaitingInput:    {ANSI: ansiCyan},
 	}
 }
 
@@ -286,10 +331,18 @@ type ColorWriter struct {
 	w       io.Writer
 	current BlockType
 	buf     []byte
+	styles  map[BlockType]BlockStyle
 }
 
 func NewColorWriter(w io.Writer) *ColorWriter {
-	return &ColorWriter{w: w}
+	return &ColorWriter{w: w, styles: DefaultBlockStyles()}
+}
+
+func NewColorWriterWithStyles(w io.Writer, styles map[BlockType]BlockStyle) *ColorWriter {
+	if styles == nil {
+		styles = DefaultBlockStyles()
+	}
+	return &ColorWriter{w: w, styles: styles}
 }
 
 func (c *ColorWriter) Write(p []byte) (int, error) {
@@ -310,10 +363,23 @@ func (c *ColorWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+func (c *ColorWriter) styleANSI(bt BlockType) string {
+	s, ok := c.styles[bt]
+	if !ok {
+		return ansiYellow
+	}
+	ansi := s.ANSI
+	if s.Bold {
+		ansi = ansiBold + ansi
+	}
+	return ansi
+}
+
 func (c *ColorWriter) writeColoredLine(line string) {
 	if header, ok := ParseHeader(line); ok {
 		c.current = header.BlockType
-		c.w.Write([]byte(ansiYellow + line + ansiReset))
+		color := c.styleANSI(header.BlockType)
+		c.w.Write([]byte(color + line + ansiReset))
 		return
 	}
 	if IsFooter(line) {
@@ -324,11 +390,7 @@ func (c *ColorWriter) writeColoredLine(line string) {
 		c.w.Write([]byte(ansiYellow + line + ansiReset))
 		return
 	}
-	if strings.HasPrefix(line, marker) && strings.Contains(line, "waiting_user_input") {
-		c.w.Write([]byte(ansiYellow + line + ansiReset))
-		return
-	}
-	color := blockColor(c.current)
+	color := c.styleANSI(c.current)
 	if color != "" {
 		c.w.Write([]byte(color + line + ansiReset))
 	} else {

@@ -9,11 +9,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type BlockStyleConfig struct {
+	Color string `yaml:"color"`
+	Bold  bool   `yaml:"bold"`
+}
+
 type Config struct {
-	LLMs     []LLMConfig    `yaml:"llms"`
-	MCPs     []MCPConfig    `yaml:"mcp"`
-	Agents   []AgentConfig  `yaml:"agents"`
-	Timeouts TimeoutConfig  `yaml:"timeouts"`
+	LLMs     []LLMConfig                  `yaml:"llms"`
+	MCPs     []MCPConfig                  `yaml:"mcp"`
+	Agents   []AgentConfig                `yaml:"agents"`
+	Timeouts TimeoutConfig                `yaml:"timeouts"`
+	Blocks   map[string]BlockStyleConfig  `yaml:"blocks"`
 }
 
 type MCPConfig struct {
