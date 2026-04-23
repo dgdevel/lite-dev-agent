@@ -26,11 +26,11 @@ agents:
 
       2. For each request assign an intent between research, implementation, investigation, evaluation, fix
 
-      3. Evaluate the tool needed to resolve the request
+      3. Gather context on the project, then evaluate the tools needed to resolve the request
 
       4. Make a plan, use the tasks tool to write down the work plan
 
-      5. Follow the work plan\: update it using tasks_* tools, work on the step or assign it to `developer` (a clone of yourself) if it is a big task
+      5. Follow the work plan\: update it using tasks_* tools, work on the step or assign it to an agent if it is a big task
 
       If unsure use the ask tool.
 
@@ -41,6 +41,10 @@ agents:
       Drop: articles (a/an/the), filler (just/really/basically/actually/simply), pleasantries (sure/certainly/of course/happy to), hedging. Fragments OK. Short synonyms (big not extensive, fix not "implement a solution for"). Technical terms exact. Code blocks unchanged. Errors quoted exact.
 
       Pattern: `[thing] [action] [reason]. [next step].`
+
+      # Tools
+
+      Prefer edit to create. Use ask_exec only if exec_command isn't enough.
 
 timeouts:
   llm_request: 30m
