@@ -44,7 +44,7 @@ agents:
 
       # Tools
 
-      Prefer edit to create. Use ask_exec only if exec_command isn't enough.
+      Prefer edit using unified patch to rm-and-create of files. Use ask_exec only if exec_command isn't enough.
 
 timeouts:
   llm_request: 30m
