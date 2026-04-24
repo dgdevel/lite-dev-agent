@@ -255,7 +255,47 @@ func (p *AskProvider) handleExec(ctx context.Context, args map[string]any, level
 	}
 
 	if !isAffirmative(response) {
-		fmt.Fprintln(p.writer, "Command denied. Type your response:")
+		fmt.Fprintln(p.writer, "Command denied. Provide an alternative command (or leave empty to give a reason):")
+		protocol.WriteWaitingInput(p.writer, p.agentName, level)
+
+		altCmd, err := p.readInput()
+		if err != nil {
+			return agent.ToolResult{Content: "DENIED"}, nil
+		}
+
+		altCmd = strings.TrimSpace(altCmd)
+		if altCmd != "" {
+			var timeoutDur time.Duration
+			if timeoutSec > 0 {
+				timeoutDur = time.Duration(timeoutSec) * time.Second
+			} else {
+				timeoutDur = 10 * time.Minute
+			}
+			execCtx, cancel := context.WithTimeout(ctx, timeoutDur)
+			defer cancel()
+
+			cmd := exec.CommandContext(execCtx, "sh", "-c", altCmd)
+			output, err := cmd.CombinedOutput()
+
+			if execCtx.Err() == context.DeadlineExceeded {
+				return agent.ToolResult{
+					Content: fmt.Sprintf("Alternative command timed out after %d seconds\n%s", timeoutSec, string(output)),
+					IsError: true,
+				}, nil
+			}
+
+			if err != nil {
+				return agent.ToolResult{
+					Content: fmt.Sprintf("Alternative command error: %v\n%s", err, string(output)),
+					IsError: true,
+				}, nil
+			}
+
+			return agent.ToolResult{Content: fmt.Sprintf("Alternative command executed: %s\n%s", altCmd, string(output))}, nil
+		}
+
+		// No alternative command given, ask for reason
+		fmt.Fprintln(p.writer, "Type the reason for denial:")
 		protocol.WriteWaitingInput(p.writer, p.agentName, level)
 
 		deniedResponse, err := p.readInput()
@@ -317,3 +357,4 @@ func isAffirmative(s string) bool {
 	s = strings.TrimSpace(strings.ToLower(s))
 	return s == "y" || s == "yes"
 }
+

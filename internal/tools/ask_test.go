@@ -294,7 +294,7 @@ func TestAskExec_Approved(t *testing.T) {
 }
 
 func TestAskExec_Denied(t *testing.T) {
-	p, buf := newTestAskProviderWithWriter(mockReadInput("n", "I prefer a different approach"))
+	p, buf := newTestAskProviderWithWriter(mockReadInput("n", "", "I prefer a different approach"))
 
 	result, err := p.CallTool(context.Background(), "ask_exec", `{
 		"cmdline": "rm -rf /",
@@ -316,8 +316,64 @@ func TestAskExec_Denied(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "Command denied. Type your response:") {
-		t.Errorf("expected denial prompt in output, got: %s", output)
+	if !strings.Contains(output, "Command denied. Provide an alternative command") {
+		t.Errorf("expected alternative command prompt in output, got: %s", output)
+	}
+	if !strings.Contains(output, "Type the reason for denial:") {
+		t.Errorf("expected reason prompt in output, got: %s", output)
+	}
+}
+
+func TestAskExec_DeniedWithAlternativeCommand(t *testing.T) {
+	p, buf := newTestAskProviderWithWriter(mockReadInput("n", "echo alt output"))
+
+	result, err := p.CallTool(context.Background(), "ask_exec", `{
+		"cmdline": "rm -rf /",
+		"timeout": 5
+	}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Content)
+	}
+
+	if !strings.HasPrefix(result.Content, "Alternative command executed: echo alt output\n") {
+		t.Errorf("expected alternative command prefix, got %q", result.Content)
+	}
+	if !strings.Contains(result.Content, "alt output") {
+		t.Errorf("expected alt output in content, got %q", result.Content)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Command denied. Provide an alternative command") {
+		t.Errorf("expected alternative command prompt in output, got: %s", output)
+	}
+}
+
+func TestAskExec_DeniedWithAlternativeCommandError(t *testing.T) {
+	p, buf := newTestAskProviderWithWriter(mockReadInput("n", "false"))
+
+	result, err := p.CallTool(context.Background(), "ask_exec", `{
+		"cmdline": "rm -rf /",
+		"timeout": 5
+	}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !result.IsError {
+		t.Error("expected error for failing alternative command")
+	}
+
+	if !strings.Contains(result.Content, "Alternative command error:") {
+		t.Errorf("expected alternative command error prefix, got %q", result.Content)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Command denied. Provide an alternative command") {
+		t.Errorf("expected alternative command prompt in output, got: %s", output)
 	}
 }
 
