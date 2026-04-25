@@ -128,7 +128,18 @@ func (m *AppModel) SetAskState(s *AskState) {
 func (m *AppModel) AddTokenStats(ts TokenStats) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.TokenStats = append(m.TokenStats, ts)
+	// Replace existing entry for same agent (token stats are cumulative)
+	replaced := false
+	for i, existing := range m.TokenStats {
+		if existing.AgentName == ts.AgentName {
+			m.TokenStats[i] = ts
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		m.TokenStats = append(m.TokenStats, ts)
+	}
 	m.CurrentTime = time.Now().Format("15:04:05")
 }
 
@@ -151,8 +162,6 @@ func (m *AppModel) ToggleBlock(index int) {
 		m.Blocks[index].Expanded = !m.Blocks[index].Expanded
 	}
 }
-
-// BlockLabel returns a short label for a block type.
 func BlockLabel(bt string) string {
 	switch bt {
 	case "agent_thinking":

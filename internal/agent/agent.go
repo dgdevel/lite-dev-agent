@@ -129,6 +129,9 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 					usage.PromptTokens += e.UsagePromptTokens
 					usage.CompletionTokens += e.UsageCompletionTokens
 				}
+				if a.Filter.Enabled(protocol.BlockTokenStats) {
+					protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockTokenStats, usage.String())
+				}
 			}
 		})
 		cancel()
@@ -146,91 +149,90 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 		if thinkingBuf.Len() > 0 && a.Filter.Enabled(protocol.BlockThinking) {
 			io.WriteString(a.Writer, "\n")
 			thinkingHeaderWritten = false
+		}
+
+		if len(toolCalls) > 0 {
+			assistantMsg := llm.Message{
+				Role:      "assistant",
+				Content:   textBuf.String(),
+				ToolCalls: convertDeltasToToolCalls(toolCalls),
 			}
+			messages = append(messages, assistantMsg)
 
-			if len(toolCalls) > 0 {
-				assistantMsg := llm.Message{
-					Role:      "assistant",
-					Content:   textBuf.String(),
-					ToolCalls: convertDeltasToToolCalls(toolCalls),
+			for i := range toolCalls {
+				tc := toolCalls[i]
+				toolName := tc.Function.Name
+				toolArgs := tc.Function.Arguments
+
+				if a.Filter.Enabled(protocol.BlockToolsInput) {
+					protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsInput, FormatToolInput(toolName, toolArgs))
 				}
-				messages = append(messages, assistantMsg)
 
-				for i := range toolCalls {
-					tc := toolCalls[i]
-					toolName := tc.Function.Name
-					toolArgs := tc.Function.Arguments
-
-					if a.Filter.Enabled(protocol.BlockToolsInput) {
-						protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsInput, FormatToolInput(toolName, toolArgs))
-					}
-
-					result, err := a.Registry.CallTool(ctx, toolName, toolArgs)
-					if err != nil {
-						result = ToolResult{
-							Content: fmt.Sprintf("tool error: %v", err),
-							IsError: true,
-						}
-					}
-
-					toolContent := result.Content
-					if toolContent == "" {
-						toolContent = "(no output)"
-					}
-
-					messages = append(messages, llm.Message{
-						Role:       "tool",
-						Content:    toolContent,
-						ToolCallID: tc.ID,
-					})
-
-					if a.Filter.Enabled(protocol.BlockToolsOutput) {
-						protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsOutput, FormatToolOutput(toolName, toolContent))
-					}
-
-					if result.Usage != nil {
-						usage.Children = append(usage.Children, result.Usage)
+				result, err := a.Registry.CallTool(ctx, toolName, toolArgs)
+				if err != nil {
+					result = ToolResult{
+						Content: fmt.Sprintf("tool error: %v", err),
+						IsError: true,
 					}
 				}
 
-				if a.Filter.Enabled(protocol.BlockTokenStats) {
-					protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockTokenStats, usage.String())
+				toolContent := result.Content
+				if toolContent == "" {
+					toolContent = "(no output)"
 				}
 
-				continue
-			}
+				messages = append(messages, llm.Message{
+					Role:       "tool",
+					Content:    toolContent,
+					ToolCallID: tc.ID,
+				})
 
-			response := textBuf.String()
-			if response == "" && thinkingBuf.Len() > 0 {
-				response = thinkingBuf.String()
-			}
-			if response == "" {
-				response = "(no response)"
-			}
-			fullResponse.WriteString(response)
+				if a.Filter.Enabled(protocol.BlockToolsOutput) {
+					protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsOutput, FormatToolOutput(toolName, toolContent))
+				}
 
-			if a.Filter.Enabled(protocol.BlockAgentResponse) {
-				protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockAgentResponse, response)
-			}
-
-			if a.Filter.Enabled(protocol.BlockAgentResponse) {
-				protocol.WriteFooter(a.Writer, time.Since(start))
+				if result.Usage != nil {
+					usage.Children = append(usage.Children, result.Usage)
+				}
 			}
 
 			if a.Filter.Enabled(protocol.BlockTokenStats) {
 				protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockTokenStats, usage.String())
 			}
 
-			messages = append(messages, llm.Message{
-				Role:    "assistant",
-				Content: response,
-			})
-
-			break
+			continue
 		}
 
-		a.History = messages[1:]
+		response := textBuf.String()
+		if response == "" && thinkingBuf.Len() > 0 {
+			response = thinkingBuf.String()
+		}
+		if response == "" {
+			response = "(no response)"
+		}
+		fullResponse.WriteString(response)
 
+		if a.Filter.Enabled(protocol.BlockAgentResponse) {
+			protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockAgentResponse, response)
+		}
+
+		if a.Filter.Enabled(protocol.BlockAgentResponse) {
+			protocol.WriteFooter(a.Writer, time.Since(start))
+		}
+
+		if a.Filter.Enabled(protocol.BlockTokenStats) {
+			protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockTokenStats, usage.String())
+		}
+
+		messages = append(messages, llm.Message{
+			Role:    "assistant",
+			Content: response,
+		})
+
+		break
+	}
+
+	a.History = messages[1:]
 
 	return &RunResult{
 		Response: fullResponse.String(),
