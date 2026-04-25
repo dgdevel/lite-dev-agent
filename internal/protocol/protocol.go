@@ -10,7 +10,7 @@ import (
 
 const marker = "#!"
 
-func formatPrefix() string {
+func FormatPrefix() string {
 	return marker + time.Now().Format("2006-01-02 15:04:05") + " "
 }
 
@@ -191,11 +191,11 @@ func (f *OutputFilter) Enabled(bt BlockType) bool {
 }
 
 func WriteHeader(w io.Writer, agentName string, level int, bt BlockType) {
-	fmt.Fprintf(w, "%sagent: %s | level: %d | %s\n", formatPrefix(), agentName, level, bt)
+	fmt.Fprintf(w, "%sagent: %s | level: %d | %s\n", FormatPrefix(), agentName, level, bt)
 }
 
 func WriteFooter(w io.Writer, d time.Duration) {
-	fmt.Fprintf(w, "%stime: %s\n", formatPrefix(), formatDuration(d))
+	fmt.Fprintf(w, "%stime: %s\n", FormatPrefix(), formatDuration(d))
 }
 
 func WriteBlock(w io.Writer, agentName string, level int, bt BlockType, content string) {
@@ -207,7 +207,7 @@ func WriteBlock(w io.Writer, agentName string, level int, bt BlockType, content 
 }
 
 func WriteWaitingInput(w io.Writer, agentName string, level int) {
-	fmt.Fprintf(w, "%sagent: %s | level: %d | waiting_user_input\n", formatPrefix(), agentName, level)
+	fmt.Fprintf(w, "%sagent: %s | level: %d | waiting_user_input\n", FormatPrefix(), agentName, level)
 }
 
 func WriteBeginConversation(w io.Writer, filePath string, isResume bool) {
@@ -215,11 +215,11 @@ func WriteBeginConversation(w io.Writer, filePath string, isResume bool) {
 	if isResume {
 		label = "resume_conversation"
 	}
-	fmt.Fprintf(w, "%s%s | file: %s\n", formatPrefix(), label, filePath)
+	fmt.Fprintf(w, "%s%s | file: %s\n", FormatPrefix(), label, filePath)
 }
 
 func WriteEndConversation(w io.Writer, filePath string) {
-	fmt.Fprintf(w, "%send_conversation | file: %s\n", formatPrefix(), filePath)
+	fmt.Fprintf(w, "%send_conversation | file: %s\n", FormatPrefix(), filePath)
 }
 
 func IsConversationMarker(line string) bool {

@@ -258,26 +258,27 @@ func convertDeltasToToolCalls(deltas []llm.ToolCallDelta) []llm.ToolCall {
 
 func (u *TokenUsage) String() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-16s prompt: %-8d completion: %d\n", u.AgentName, u.PromptTokens, u.CompletionTokens)
-	u.writeChildren(&b, "")
+	ts := protocol.FormatPrefix()
+	fmt.Fprintf(&b, "%s%-16s prompt: %-8d completion: %d\n", ts, u.AgentName, u.PromptTokens, u.CompletionTokens)
+	u.writeChildren(&b, "", ts)
 	return b.String()
 }
 
-func (u *TokenUsage) writeChildren(b *strings.Builder, prefix string) {
+func (u *TokenUsage) writeChildren(b *strings.Builder, prefix string, ts string) {
 	for i, child := range u.Children {
 		isLast := i == len(u.Children)-1
 		connector := "├── "
 		if isLast {
 			connector = "└── "
 		}
-		fmt.Fprintf(b, "%s%s%-16s prompt: %-8d completion: %d\n", prefix, connector, child.AgentName, child.PromptTokens, child.CompletionTokens)
+		fmt.Fprintf(b, "%s%s%s%-16s prompt: %-8d completion: %d\n", ts, prefix, connector, child.AgentName, child.PromptTokens, child.CompletionTokens)
 		childPrefix := prefix
 		if isLast {
 			childPrefix += "    "
 		} else {
 			childPrefix += "│   "
 		}
-		child.writeChildren(b, childPrefix)
+		child.writeChildren(b, childPrefix, ts)
 	}
 }
 

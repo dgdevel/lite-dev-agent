@@ -514,7 +514,7 @@ func (ui *UI) blockList(gtx layout.Context) layout.Dimensions {
 					layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 						return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							headerText := ui.blockHeaderText(b, label, accent)
-							bodyText := b.Content
+							bodyText := strings.ReplaceAll(b.Content, "\t", "  ")
 							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									lbl := material.Body2(ui.theme, headerText)

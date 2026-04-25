@@ -124,6 +124,7 @@ func (b *Bridge) parseOutput(stdout io.Reader) {
 	var currentBlock *Block
 	var contentLines []string
 	var looseLines []string // lines outside blocks, possibly ask prompts
+	var liveBlockIdx int = -1
 
 	finalizeBlock := func() {
 		if currentBlock != nil {
@@ -131,7 +132,13 @@ func (b *Bridge) parseOutput(stdout io.Reader) {
 			if currentBlock.BlockType == "token_stats" {
 				b.parseTokenStats(currentBlock.Content)
 			}
-			b.model.AddBlock(*currentBlock)
+			if liveBlockIdx >= 0 {
+				b.model.UpdateBlockContent(liveBlockIdx, currentBlock.Content)
+				b.model.SetBlockExpanded(liveBlockIdx, false)
+				liveBlockIdx = -1
+			} else {
+				b.model.AddBlock(*currentBlock)
+			}
 			currentBlock = nil
 			contentLines = nil
 		}
@@ -184,6 +191,10 @@ func (b *Bridge) parseOutput(stdout io.Reader) {
 				Time:      t,
 			}
 			contentLines = nil
+			if m[4] == "agent_thinking" {
+				currentBlock.Expanded = true
+				liveBlockIdx = b.model.AddBlock(*currentBlock)
+			}
 			continue
 		}
 
@@ -203,6 +214,9 @@ func (b *Bridge) parseOutput(stdout io.Reader) {
 
 		if currentBlock != nil {
 			contentLines = append(contentLines, line)
+			if liveBlockIdx >= 0 {
+				b.model.UpdateBlockContent(liveBlockIdx, strings.Join(contentLines, "\n"))
+			}
 		} else {
 			// Accumulate loose lines (potential ask prompts)
 			looseLines = append(looseLines, line)
@@ -298,20 +312,31 @@ func (b *Bridge) parseAskPrompt(lines []string) *AskState {
 	}
 }
 
+func stripTimestamp(line string) string {
+	line = strings.TrimPrefix(line, "#!")
+	if len(line) >= 20 && line[4] == '-' && line[7] == '-' && line[10] == ' ' && line[13] == ':' && line[16] == ':' && line[19] == ' ' {
+		return line[20:]
+	}
+	return line
+}
+
 func (b *Bridge) parseTokenStats(content string) {
 	lines := strings.Split(content, "\n")
+	var newStats []TokenStats
 	for _, line := range lines {
+		line = stripTimestamp(line)
 		line = strings.TrimLeft(line, " │├└─ ")
 		if m := tokenStatsRe.FindStringSubmatch(line); m != nil {
 			prompt, _ := strconv.ParseInt(m[2], 10, 64)
 			completion, _ := strconv.ParseInt(m[3], 10, 64)
-			b.model.AddTokenStats(TokenStats{
+			newStats = append(newStats, TokenStats{
 				AgentName:        m[1],
 				PromptTokens:     prompt,
 				CompletionTokens: completion,
 			})
 		}
 	}
+	b.model.SetTokenStats(newStats)
 }
 
 // SendPrompt writes the user's prompt to the agent's stdin.

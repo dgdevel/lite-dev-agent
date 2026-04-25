@@ -179,8 +179,8 @@ func TestChatCompletionWithToolCalls(t *testing.T) {
 
 func TestChatCompletionAPIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, `{"error": "model not found"}`)
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error": "bad request"}`)
 	}))
 	defer server.Close()
 
@@ -190,8 +190,8 @@ func TestChatCompletionAPIError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "500") {
-		t.Fatalf("expected 500 in error, got: %v", err)
+	if !strings.Contains(err.Error(), "400") {
+		t.Fatalf("expected 400 in error, got: %v", err)
 	}
 }
 
@@ -339,7 +339,10 @@ func TestChatCompletionStreamTimeout(t *testing.T) {
 
 	c := NewClient(Options{APIBase: server.URL, Model: "test", Timeout: 100 * time.Millisecond})
 
-	err := c.ChatCompletionStream(context.Background(), []Message{
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	err := c.ChatCompletionStream(ctx, []Message{
 		{Role: "user", Content: "hi"},
 	}, nil, func(e StreamEvent) {})
 

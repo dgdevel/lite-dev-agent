@@ -74,11 +74,12 @@ func NewAppModel() *AppModel {
 	}
 }
 
-func (m *AppModel) AddBlock(b Block) {
+func (m *AppModel) AddBlock(b Block) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.Blocks = append(m.Blocks, b)
 	m.CurrentTime = time.Now().Format("15:04:05")
+	return len(m.Blocks) - 1
 }
 
 func (m *AppModel) UpdateLastBlock(content string) {
@@ -125,22 +126,27 @@ func (m *AppModel) SetAskState(s *AskState) {
 	m.AskPending = s
 }
 
-func (m *AppModel) AddTokenStats(ts TokenStats) {
+func (m *AppModel) SetTokenStats(stats []TokenStats) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	// Replace existing entry for same agent (token stats are cumulative)
-	replaced := false
-	for i, existing := range m.TokenStats {
-		if existing.AgentName == ts.AgentName {
-			m.TokenStats[i] = ts
-			replaced = true
-			break
-		}
-	}
-	if !replaced {
-		m.TokenStats = append(m.TokenStats, ts)
-	}
+	m.TokenStats = stats
 	m.CurrentTime = time.Now().Format("15:04:05")
+}
+
+func (m *AppModel) UpdateBlockContent(index int, content string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if index >= 0 && index < len(m.Blocks) {
+		m.Blocks[index].Content = content
+	}
+}
+
+func (m *AppModel) SetBlockExpanded(index int, expanded bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if index >= 0 && index < len(m.Blocks) {
+		m.Blocks[index].Expanded = expanded
+	}
 }
 
 // TotalTokens returns total prompt + completion tokens across all stats.
