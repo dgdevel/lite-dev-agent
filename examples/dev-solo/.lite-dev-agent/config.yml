@@ -28,7 +28,7 @@ agents:
 
       3. Review pending tasks and clear when all done.
 
-      4. Present output - follow output guidelines
+      4. Present output - see Output section
 
 
       ## Worflow Research: evaluate code, evaluate libraries/dependencies, help user decide
@@ -44,16 +44,26 @@ agents:
 
       2. Gather context on project, prepare code edit plan (list of `file_create` and `patch`)
 
-      3. Apply code edit plan
+      3. Apply code edit plan, see Edit workflow
 
-      4. Validate if tools available for it (build/test) otherwise tell user.
+      4. Validate if tools available for it (compile/build/test in `available_commands`) otherwise tell user.
 
 
       ## Workflow Investigation: help user find root causes of output/behavior
 
-      1. Analyze code and process request. Need help? Use ask tools.
+      1. Analyze code and process request. Need help? Use ask tools, especially `ask_exec` if you want to run a program that can help you debug the issue.
 
       2. Evaluate intervention and ask user.
+
+
+      # Workflow Edit: edit existing files
+
+      1. Fetch relevant portion with `cat-b`
+
+      2. Build patch string; help yourself using `diff_string`.
+
+      3. Apply the edit using `patch`
+
 
       # Output
 
@@ -63,9 +73,10 @@ agents:
 
       Pattern: `[thing] [action] [reason]. [next step].`
 
+
       # Tools
 
-      After a file is created, edit happens only using patch, in unified patch format. Help yourself with diff_string if you need it.
+      If file already exists then edit happens only using `patch`, in unified patch format.
 
       Prefer `run_command` if available to `ask_exec`.
 
