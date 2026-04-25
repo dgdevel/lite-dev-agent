@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/color"
+	"sort"
 	"strings"
 
 	"gioui.org/io/key"
@@ -88,6 +90,8 @@ type UI struct {
 	scrollToEnd bool
 	lastBlockCount int
 
+	initialFocusDone bool
+
 	// Ask tool widgets
 	askEditor     widget.Editor // for open-ended / alt cmd / reason
 	askSendBtn    widget.Clickable
@@ -121,6 +125,10 @@ func NewUI(model *AppModel, bridge *Bridge) *UI {
 }
 
 func (ui *UI) Layout(gtx layout.Context) layout.Dimensions {
+	if !ui.initialFocusDone {
+		ui.initialFocusDone = true
+		gtx.Execute(key.FocusCmd{Tag: &ui.inputEditor})
+	}
 	// Handle keyboard shortcuts for main input
 	for {
 		ev, ok := gtx.Event(key.Filter{
@@ -506,7 +514,7 @@ func (ui *UI) blockList(gtx layout.Context) layout.Dimensions {
 					layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 						return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							headerText := ui.blockHeaderText(b, label, accent)
-							bodyText := ui.blockBodyText(b)
+							bodyText := b.Content
 							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									lbl := material.Body2(ui.theme, headerText)
@@ -514,7 +522,13 @@ func (ui *UI) blockList(gtx layout.Context) layout.Dimensions {
 									return lbl.Layout(gtx)
 								}),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									if !b.Expanded || bodyText == "" {
+									if !b.Expanded {
+										return layout.Dimensions{}
+									}
+									if b.BlockType == "tools_definition" {
+										return ui.toolDefsBody(gtx, b.Content)
+									}
+									if bodyText == "" {
 										return layout.Dimensions{}
 									}
 									return layout.UniformInset(unit.Dp(4)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -560,12 +574,7 @@ func (ui *UI) blockHeaderText(b Block, label string, accent color.NRGBA) string 
 	}
 }
 
-func (ui *UI) blockBodyText(b Block) string {
-	if b.BlockType == "tools_definition" {
-		return formatToolDefs(b.Content)
-	}
-	return b.Content
-}
+
 
 func (ui *UI) inputArea(gtx layout.Context) layout.Dimensions {
 	return layout.Stack{}.Layout(gtx,
@@ -637,17 +646,16 @@ func countTools(content string) int {
 	return n
 }
 
-// formatToolDefs reformats raw tools_definition content into a readable display.
-// Raw format: "tool_name: description\nParameters: {json}\ntool_name2: ..."
-func formatToolDefs(raw string) string {
+type toolDef struct {
+	name   string
+	desc   string
+	params string
+}
+
+func parseToolDefs(raw string) []toolDef {
 	lines := strings.Split(raw, "\n")
-	type tool struct {
-		name   string
-		desc   string
-		params string
-	}
-	var tools []tool
-	var cur *tool
+	var tools []toolDef
+	var cur *toolDef
 
 	for _, line := range lines {
 		if strings.HasPrefix(line, "Parameters: ") {
@@ -656,12 +664,11 @@ func formatToolDefs(raw string) string {
 			}
 			continue
 		}
-		// New tool: "name: description"
 		if idx := strings.Index(line, ": "); idx > 0 {
 			if cur != nil {
 				tools = append(tools, *cur)
 			}
-			cur = &tool{
+			cur = &toolDef{
 				name: line[:idx],
 				desc: line[idx+2:],
 			}
@@ -670,84 +677,66 @@ func formatToolDefs(raw string) string {
 	if cur != nil {
 		tools = append(tools, *cur)
 	}
-
-	var b strings.Builder
-	for i, t := range tools {
-		if i > 0 {
-			b.WriteString("\n\n")
-		}
-		b.WriteString("▸ ")
-		b.WriteString(t.name)
-		b.WriteString("\n  ")
-		b.WriteString(t.desc)
-		if t.params != "" {
-			b.WriteString("\n  Parameters:\n")
-			b.WriteString(indentString(prettyJSON(t.params), "    "))
-		}
-	}
-	return b.String()
+	return tools
 }
 
-func indentString(s, prefix string) string {
-	lines := strings.Split(s, "\n")
-	for i, l := range lines {
-		lines[i] = prefix + l
+func extractParamNames(paramsJSON string) []string {
+	var schema struct {
+		Properties map[string]interface{} `json:"properties"`
 	}
-	return strings.Join(lines, "\n")
+	if err := json.Unmarshal([]byte(paramsJSON), &schema); err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(schema.Properties))
+	for name := range schema.Properties {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
-// prettyJSON does simple JSON indentation without importing encoding/json.
-func prettyJSON(s string) string {
-	s = strings.TrimSpace(s)
-	if !strings.HasPrefix(s, "{") && !strings.HasPrefix(s, "[") {
-		return s
+func (ui *UI) toolDefsBody(gtx layout.Context, raw string) layout.Dimensions {
+	tools := parseToolDefs(raw)
+	children := make([]layout.FlexChild, 0, len(tools))
+	for _, t := range tools {
+		t := t
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.UniformInset(unit.Dp(2)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Stack{}.Layout(gtx,
+					layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+						paintRect(gtx, image.Pt(gtx.Constraints.Max.X, gtx.Constraints.Min.Y),
+							color.NRGBA{R: 50, G: 50, B: 50, A: 255})
+						paintRect(gtx, image.Pt(3, gtx.Constraints.Min.Y), colors.ToolInput)
+						return layout.Dimensions{Size: gtx.Constraints.Min}
+					}),
+					layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+						return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							cardChildren := make([]layout.FlexChild, 0, 3)
+
+							nameLbl := material.Body2(ui.theme, t.name)
+							nameLbl.Color = colors.ToolInput
+							nameLbl.TextSize = unit.Sp(13)
+							cardChildren = append(cardChildren, layout.Rigid(nameLbl.Layout))
+
+							descLbl := material.Body2(ui.theme, t.desc)
+							descLbl.Color = colors.TextSecondary
+							descLbl.TextSize = unit.Sp(12)
+							cardChildren = append(cardChildren, layout.Rigid(descLbl.Layout))
+
+							paramNames := extractParamNames(t.params)
+							if len(paramNames) > 0 {
+								paramLbl := material.Body2(ui.theme, "params: "+strings.Join(paramNames, ", "))
+								paramLbl.Color = colors.TextSecondary
+								paramLbl.TextSize = unit.Sp(11)
+								cardChildren = append(cardChildren, layout.Rigid(paramLbl.Layout))
+							}
+
+							return layout.Flex{Axis: layout.Vertical}.Layout(gtx, cardChildren...)
+						})
+					}),
+				)
+			})
+		}))
 	}
-	var out strings.Builder
-	indent := 0
-	inStr := false
-	esc := false
-	for _, ch := range s {
-		if esc {
-			esc = false
-			out.WriteRune(ch)
-			continue
-		}
-		if ch == '\\' && inStr {
-			esc = true
-			out.WriteRune(ch)
-			continue
-		}
-		if ch == '"' {
-			inStr = !inStr
-			out.WriteRune(ch)
-			continue
-		}
-		if inStr {
-			out.WriteRune(ch)
-			continue
-		}
-		switch ch {
-		case '{', '[':
-			out.WriteRune(ch)
-			indent++
-			out.WriteRune('\n')
-			out.WriteString(strings.Repeat("  ", indent))
-		case '}', ']':
-			indent--
-			out.WriteRune('\n')
-			out.WriteString(strings.Repeat("  ", indent))
-			out.WriteRune(ch)
-		case ',':
-			out.WriteRune(ch)
-			out.WriteRune('\n')
-			out.WriteString(strings.Repeat("  ", indent))
-		case ':':
-			out.WriteString(": ")
-		case ' ', '\t', '\n', '\r':
-			// skip whitespace outside strings
-		default:
-			out.WriteRune(ch)
-		}
-	}
-	return out.String()
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 }
