@@ -48,6 +48,13 @@ type TokenStats struct {
 	CompletionTokens int64
 }
 
+type ViewState int
+
+const (
+	ViewSelect ViewState = iota
+	ViewChat
+)
+
 // AppModel holds all application state.
 type AppModel struct {
 	mu sync.Mutex
@@ -56,6 +63,12 @@ type AppModel struct {
 	TokenStats  []TokenStats
 	InputText   string
 	CurrentTime string
+
+	View ViewState
+
+	// Conversation selection state
+	Conversations []ConversationInfo
+	SelectError   string
 
 	// State for bridge communication
 	Started   bool   // true after subprocess has been launched
@@ -71,7 +84,26 @@ type AppModel struct {
 func NewAppModel() *AppModel {
 	return &AppModel{
 		Blocks: make([]Block, 0),
+		View:   ViewSelect,
 	}
+}
+
+func (m *AppModel) SetView(v ViewState) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.View = v
+}
+
+func (m *AppModel) SetConversations(convs []ConversationInfo) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Conversations = convs
+}
+
+func (m *AppModel) SetSelectError(err string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.SelectError = err
 }
 
 func (m *AppModel) AddBlock(b Block) int {

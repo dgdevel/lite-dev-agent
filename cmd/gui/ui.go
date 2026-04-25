@@ -98,6 +98,14 @@ type UI struct {
 	askApproveBtn widget.Clickable
 	askDenyBtn    widget.Clickable
 	askOptionBtns []widget.Clickable
+
+	// Conversation selection widgets
+	convList       layout.List
+	convClicks     []widget.Clickable
+	newConvBtn     widget.Clickable
+	refreshConvBtn widget.Clickable
+
+	onStartConversation func(resumePath string)
 }
 
 func NewUI(model *AppModel, bridge *Bridge) *UI {
@@ -113,6 +121,7 @@ func NewUI(model *AppModel, bridge *Bridge) *UI {
 		model:  model,
 		bridge: bridge,
 		list:   layout.List{Axis: layout.Vertical},
+		convList: layout.List{Axis: layout.Vertical},
 		inputEditor: widget.Editor{
 			SingleLine: false,
 			Submit:     false,
@@ -125,6 +134,16 @@ func NewUI(model *AppModel, bridge *Bridge) *UI {
 }
 
 func (ui *UI) Layout(gtx layout.Context) layout.Dimensions {
+	ui.model.mu.Lock()
+	view := ui.model.View
+	ui.model.mu.Unlock()
+
+	paintRect(gtx, gtx.Constraints.Max, colors.Background)
+
+	if view == ViewSelect {
+		return ui.conversationSelectLayout(gtx)
+	}
+
 	if !ui.initialFocusDone {
 		ui.initialFocusDone = true
 		gtx.Execute(key.FocusCmd{Tag: &ui.inputEditor})
@@ -170,7 +189,6 @@ func (ui *UI) Layout(gtx layout.Context) layout.Dimensions {
 		ui.bridge.SendResponse("n")
 	}
 
-	paintRect(gtx, gtx.Constraints.Max, colors.Background)
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(ui.topBar),
 		layout.Flexed(1, ui.blockList),
@@ -574,7 +592,149 @@ func (ui *UI) blockHeaderText(b Block, label string, accent color.NRGBA) string 
 	}
 }
 
+func (ui *UI) conversationSelectLayout(gtx layout.Context) layout.Dimensions {
+	if ui.newConvBtn.Clicked(gtx) {
+		if ui.onStartConversation != nil {
+			ui.onStartConversation("")
+		}
+		return layout.Dimensions{Size: gtx.Constraints.Max}
+	}
+	if ui.refreshConvBtn.Clicked(gtx) {
+		go ui.loadConversations()
+		return layout.Dimensions{Size: gtx.Constraints.Max}
+	}
 
+	ui.model.mu.Lock()
+	convs := ui.model.Conversations
+	selectErr := ui.model.SelectError
+	ui.model.mu.Unlock()
+
+	for len(ui.convClicks) < len(convs) {
+		ui.convClicks = append(ui.convClicks, widget.Clickable{})
+	}
+
+	for i := range convs {
+		if ui.convClicks[i].Clicked(gtx) {
+			if ui.onStartConversation != nil {
+				ui.onStartConversation(convs[i].Path)
+			}
+			return layout.Dimensions{Size: gtx.Constraints.Max}
+		}
+	}
+
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.UniformInset(unit.Dp(16)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						title := material.H5(ui.theme, "Conversations")
+						title.Color = colors.Text
+						return title.Layout(gtx)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								btn := material.Button(ui.theme, &ui.refreshConvBtn, "Refresh")
+								btn.Color = colors.Text
+								btn.Background = colors.Surface
+								btn.TextSize = unit.Sp(13)
+								return btn.Layout(gtx)
+							}),
+							layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								btn := material.Button(ui.theme, &ui.newConvBtn, "+ New Conversation")
+								btn.Color = colors.OnPrimary
+								btn.Background = colors.Primary
+								btn.TextSize = unit.Sp(13)
+								return btn.Layout(gtx)
+							}),
+						)
+					}),
+				)
+			})
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			paintRect(gtx, image.Pt(gtx.Constraints.Max.X, 1), colors.Border)
+			return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 1)}
+		}),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			if selectErr != "" {
+				return layout.UniformInset(unit.Dp(16)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					lbl := material.Body1(ui.theme, "Error: "+selectErr)
+					lbl.Color = colors.Error
+					return lbl.Layout(gtx)
+				})
+			}
+			if len(convs) == 0 {
+				return layout.UniformInset(unit.Dp(16)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					lbl := material.Body1(ui.theme, "No existing conversations found. Click \"+ New Conversation\" to start.")
+					lbl.Color = colors.TextSecondary
+					return lbl.Layout(gtx)
+				})
+			}
+			return ui.convList.Layout(gtx, len(convs), func(gtx layout.Context, idx int) layout.Dimensions {
+				c := convs[idx]
+				click := &ui.convClicks[idx]
+				return layout.UniformInset(unit.Dp(2)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return material.Clickable(gtx, click, func(gtx layout.Context) layout.Dimensions {
+						hovered := click.Hovered()
+						bgColor := colors.Surface
+						if hovered {
+							bgColor = color.NRGBA{R: 55, G: 55, B: 55, A: 255}
+						}
+						return layout.Stack{}.Layout(gtx,
+							layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+								paintRect(gtx, image.Pt(gtx.Constraints.Max.X, gtx.Constraints.Min.Y), bgColor)
+								paintRect(gtx, image.Pt(3, gtx.Constraints.Min.Y), colors.Primary)
+								return layout.Dimensions{Size: gtx.Constraints.Min}
+							}),
+							layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+								return layout.UniformInset(unit.Dp(12)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											dateStr := FormatConversationDate(c)
+											lbl := material.Body1(ui.theme, dateStr)
+											lbl.Color = colors.Text
+											lbl.TextSize = unit.Sp(15)
+											return lbl.Layout(gtx)
+										}),
+										layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout),
+										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											total := c.UserMessages + c.AgentMessages
+											summary := fmt.Sprintf("%d messages (%d user, %d agent) | %d lines | %s",
+												total, c.UserMessages, c.AgentMessages, c.Lines, formatSize(c.Size))
+											lbl := material.Body2(ui.theme, summary)
+											lbl.Color = colors.TextSecondary
+											lbl.TextSize = unit.Sp(12)
+											return lbl.Layout(gtx)
+										}),
+										layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout),
+										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											lbl := material.Body2(ui.theme, c.Filename)
+											lbl.Color = color.NRGBA{R: 100, G: 100, B: 100, A: 255}
+											lbl.TextSize = unit.Sp(11)
+											return lbl.Layout(gtx)
+										}),
+									)
+								})
+							}),
+						)
+					})
+				})
+			})
+		}),
+	)
+}
+
+func (ui *UI) loadConversations() {
+	convs, err := ListConversations(".")
+	if err != nil {
+		ui.model.SetSelectError(err.Error())
+		return
+	}
+	ui.model.SetConversations(convs)
+	ui.model.SetSelectError("")
+}
 
 func (ui *UI) inputArea(gtx layout.Context) layout.Dimensions {
 	return layout.Stack{}.Layout(gtx,

@@ -23,18 +23,26 @@ func main() {
 	model := NewAppModel()
 	bridge := NewBridge(model)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Force --color=false so ANSI escapes don't corrupt protocol parsing
-	agentArgs := append([]string{"--color=false"}, os.Args[1:]...)
-	if err := bridge.Start(ctx, binaryPath, agentArgs); err != nil {
-
-		os.Exit(1)
-	}
-	defer bridge.Close()
-
 	ui := NewUI(model, bridge)
+
+	ui.onStartConversation = func(resumePath string) {
+		ctx, cancel := context.WithCancel(context.Background())
+
+		agentArgs := append([]string{"--color=false"}, os.Args[1:]...)
+		if resumePath != "" {
+			agentArgs = append([]string{"--color=false", "--resume", resumePath}, os.Args[1:]...)
+		}
+		if err := bridge.Start(ctx, binaryPath, agentArgs); err != nil {
+			model.SetSelectError(fmt.Sprintf("failed to start agent: %v", err))
+			cancel()
+			return
+		}
+
+		model.SetView(ViewChat)
+		_ = cancel
+	}
+
+	ui.loadConversations()
 
 	go func() {
 		window := new(app.Window)
@@ -51,15 +59,15 @@ func main() {
 }
 
 func run(window *app.Window, ui *UI, model *AppModel) error {
-	// Periodic invalidation to refresh UI while agent is processing
 	go func() {
 		ticker := time.NewTicker(200 * time.Millisecond)
 		defer ticker.Stop()
 		for range ticker.C {
 			model.mu.Lock()
 			running := model.Running
+			view := model.View
 			model.mu.Unlock()
-			if running {
+			if running || view == ViewSelect {
 				window.Invalidate()
 			}
 		}
