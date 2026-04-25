@@ -105,6 +105,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 		var thinkingBuf strings.Builder
 		var toolCalls []llm.ToolCallDelta
 		var thinkingHeaderWritten bool
+		var callHasUsage bool
 
 		err := a.LLM.ChatCompletionStream(reqCtx, messages, toolDefs, func(e llm.StreamEvent) {
 			switch e.Type {
@@ -122,12 +123,23 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 			case llm.EventToolCall:
 				toolCalls = e.ToolCalls
 			case llm.EventUsage:
-				usage.PromptTokens += e.UsagePromptTokens
-				usage.CompletionTokens += e.UsageCompletionTokens
+				if !callHasUsage {
+					if e.UsagePromptTokens > 0 {
+						usage.PromptTokens = e.UsagePromptTokens
+					}
+					if e.UsageCompletionTokens > 0 {
+						usage.CompletionTokens += e.UsageCompletionTokens
+					}
+				}
 			case llm.EventDone:
 				if e.UsagePromptTokens > 0 || e.UsageCompletionTokens > 0 {
-					usage.PromptTokens += e.UsagePromptTokens
-					usage.CompletionTokens += e.UsageCompletionTokens
+					callHasUsage = true
+					if e.UsagePromptTokens > 0 {
+						usage.PromptTokens = e.UsagePromptTokens
+					}
+					if e.UsageCompletionTokens > 0 {
+						usage.CompletionTokens += e.UsageCompletionTokens
+					}
 				}
 				if a.Filter.Enabled(protocol.BlockTokenStats) {
 					protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockTokenStats, usage.String())
