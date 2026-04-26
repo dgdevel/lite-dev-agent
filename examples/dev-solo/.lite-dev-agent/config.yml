@@ -7,7 +7,7 @@ llms:
 mcp:
   - name: devkit
     type: stdio
-    command: "../nixdevkit/nixdevkit %s"
+    command: "../nixdevkit/nixdevkit --ignore ^\\. %s"
 
 agents:
 
