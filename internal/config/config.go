@@ -43,13 +43,19 @@ type LLMConfig struct {
 	MaxTokens int               `yaml:"max_tokens"`
 }
 
+type InitialToolCall struct {
+	Tool      string                 `yaml:"tool"`
+	Arguments map[string]interface{} `yaml:"arguments"`
+}
+
 type AgentConfig struct {
-	Name        string `yaml:"name"`
-	Default     bool   `yaml:"default"`
-	LLM         string `yaml:"llm"`
-	Tools       string `yaml:"tools"`
-	Expose      string `yaml:"expose"`
-	SystemPrompt string `yaml:"system_prompt"`
+	Name             string            `yaml:"name"`
+	Default          bool              `yaml:"default"`
+	LLM              string            `yaml:"llm"`
+	Tools            string            `yaml:"tools"`
+	Expose           string            `yaml:"expose"`
+	SystemPrompt     string            `yaml:"system_prompt"`
+	InitialToolCalls []InitialToolCall `yaml:"initial_tool_calls"`
 }
 
 type TimeoutConfig struct {

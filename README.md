@@ -117,6 +117,35 @@ agents:
 | `tools` | yes | Comma-separated tool groups: MCP server names, `agents`, `ask` |
 | `expose` | no | If set, this agent is available as a tool to other agents |
 | `system_prompt` | yes | System prompt. Supports `{current_date}` and `{current_time}` variables. |
+| `initial_tool_calls` | no | Tool calls to execute automatically at the start of a new conversation (see below) |
+
+### Initial Tool Calls
+
+You can configure an agent to automatically execute tool calls right after the first user message in a new conversation. This is useful for injecting project context (e.g., listing files, reading README) before the agent begins reasoning.
+
+```yaml
+agents:
+  - name: dev
+    default: true
+    tools: devkit
+    system_prompt: You are a developer assistant.
+    initial_tool_calls:
+      - tool: ls
+        arguments:
+          path: .
+      - tool: read
+        arguments:
+          path: README.md
+```
+
+Each entry has:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `tool` | yes | Tool name (must be available in the agent's tool groups) |
+| `arguments` | no | Key-value map passed as JSON arguments to the tool |
+
+The tool calls and their results are emitted as `tools_input`/`tools_output` blocks and injected into the message history as if the agent had made those calls. This only runs on the first message of a new conversation (not on resume).
 
 ### Prompt variables
 
@@ -320,6 +349,8 @@ Resume a session with `--resume`:
 ```
 
 New output is appended to the same log file. The agent retains full conversation context from the previous session.
+
+When resuming, all previous conversation blocks are replayed to stdout so that downstream consumers (e.g., the GUI) can reconstruct the full conversation history. The `waiting_user_input` blocks are excluded from the replay.
 
 ## Test
 

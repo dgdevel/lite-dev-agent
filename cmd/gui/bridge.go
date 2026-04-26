@@ -173,8 +173,12 @@ func (b *Bridge) parseOutput(stdout io.Reader) {
 
 		if conversationRe.MatchString(line) {
 			m := conversationRe.FindStringSubmatch(line)
-			if m[2] == "begin_conversation" || m[2] == "resume_conversation" {
+			if m[2] == "begin_conversation" {
 				b.model.SetConvFile(m[3])
+				b.model.SetIsResume(false)
+			} else if m[2] == "resume_conversation" {
+				b.model.SetConvFile(m[3])
+				b.model.SetIsResume(true)
 			}
 			continue
 		}

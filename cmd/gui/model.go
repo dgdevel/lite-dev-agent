@@ -76,6 +76,7 @@ type AppModel struct {
 	Running   bool   // true while agent is processing
 	AgentName string // name of the default agent
 	ConvFile  string // conversation file path
+	IsResume  bool   // true if this is a resumed conversation
 
 	// Ask tool state
 	AskPending *AskState // non-nil when an ask tool is waiting for input
@@ -150,6 +151,19 @@ func (m *AppModel) SetConvFile(f string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ConvFile = f
+}
+
+func (m *AppModel) SetIsResume(r bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.IsResume = r
+}
+
+func (m *AppModel) ClearBlocks() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Blocks = make([]Block, 0)
+	m.TokenStats = nil
 }
 
 func (m *AppModel) SetAskState(s *AskState) {

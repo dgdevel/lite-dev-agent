@@ -26,6 +26,8 @@ func main() {
 	ui := NewUI(model, bridge)
 
 	ui.onStartConversation = func(resumePath string) {
+		model.ClearBlocks()
+
 		ctx, cancel := context.WithCancel(context.Background())
 
 		agentArgs := append([]string{"--color=false"}, os.Args[1:]...)

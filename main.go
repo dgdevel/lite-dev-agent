@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/dgdevel/lite-dev-agent/internal/agent"
@@ -220,6 +221,23 @@ func main() {
 			fmt.Fprintf(os.Stderr, "error parsing resume file: %v\n", err)
 			os.Exit(1)
 		}
+
+		for _, block := range blocks {
+			if block.Header.BlockType == protocol.BlockWaitingInput {
+				continue
+			}
+			protocol.WriteHeader(stdoutWriter, block.Header.AgentName, block.Header.Level, block.Header.BlockType)
+			if block.Content != "" {
+				fmt.Fprint(stdoutWriter, block.Content)
+				if !strings.HasSuffix(block.Content, "\n") {
+					fmt.Fprintln(stdoutWriter)
+				}
+			}
+			if block.Footer != nil {
+				protocol.WriteFooter(stdoutWriter, block.Footer.Duration)
+			}
+		}
+
 		reconstructed := conversation.ReconstructFromBlocks(blocks, defaultAgentCfg.SystemPrompt)
 		history = reconstructed.Messages
 		fmt.Fprintf(os.Stderr, "resumed session with %d messages\n", len(history))

@@ -15,6 +15,10 @@ agents:
     default: true
     expose: A software developer
     tools: agents, devkit, ask
+    initial_tool_calls:
+      - tool: ls
+        arguments:
+          path: .
     system_prompt: >
       You are a software developer.
 

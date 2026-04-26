@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -92,6 +93,57 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 
 	if len(toolDefs) > 0 && a.Filter.Enabled(protocol.BlockToolsDefinition) {
 		protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsDefinition, FormatToolDefinitions(toolDefs))
+	}
+
+	if len(opts.History) == 0 && opts.UserMessage != "" && len(a.Config.InitialToolCalls) > 0 {
+		var toolCalls []llm.ToolCall
+		var toolResultMsgs []llm.Message
+
+		for i, itc := range a.Config.InitialToolCalls {
+			argsJSON, _ := json.Marshal(itc.Arguments)
+			argsStr := string(argsJSON)
+			callID := fmt.Sprintf("initial_%d", i)
+
+			tc := llm.ToolCall{
+				ID:   callID,
+				Type: "function",
+				Function: llm.FunctionCall{
+					Name:      itc.Tool,
+					Arguments: argsStr,
+				},
+			}
+			toolCalls = append(toolCalls, tc)
+
+			if a.Filter.Enabled(protocol.BlockToolsInput) {
+				protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsInput, FormatToolInput(itc.Tool, argsStr))
+			}
+
+			result, err := a.Registry.CallTool(ctx, itc.Tool, argsStr)
+			if err != nil {
+				result = ToolResult{Content: fmt.Sprintf("tool error: %v", err), IsError: true}
+			}
+
+			content := result.Content
+			if content == "" {
+				content = "(no output)"
+			}
+
+			toolResultMsgs = append(toolResultMsgs, llm.Message{
+				Role:       "tool",
+				Content:    content,
+				ToolCallID: callID,
+			})
+
+			if a.Filter.Enabled(protocol.BlockToolsOutput) {
+				protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsOutput, FormatToolOutput(itc.Tool, content))
+			}
+		}
+
+		messages = append(messages, llm.Message{
+			Role:      "assistant",
+			ToolCalls: toolCalls,
+		})
+		messages = append(messages, toolResultMsgs...)
 	}
 
 	var fullResponse strings.Builder

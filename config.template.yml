@@ -26,6 +26,13 @@ agents:
     system_prompt: >
       You are the team manager. Analyze requests and route them to the proper
       team agent. Synthesize the results before responding to the user.
+    # initial_tool_calls:
+    #   - tool: ls
+    #     arguments:
+    #       path: .
+    #   - tool: read
+    #     arguments:
+    #       path: README.md
   - name: project_searcher
     tools: my-mcp
     expose: File system researcher
