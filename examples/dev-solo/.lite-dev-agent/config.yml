@@ -7,7 +7,7 @@ llms:
 mcp:
   - name: devkit
     type: stdio
-    command: "../nixdevkit/nixdevkit --ignore ^\\. %s"
+    command: "../nixdevkit/nixdevkit --ignore ^\\. --enable-indexer %s"
 
 agents:
 
@@ -16,6 +16,9 @@ agents:
     expose: A software developer
     tools: agents, devkit, ask
     initial_tool_calls:
+      - tool: relevant_code
+        arguments:
+          prompt: "%p"
       - tool: ls
         arguments:
           pattern: .

@@ -143,7 +143,14 @@ Each entry has:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `tool` | yes | Tool name (must be available in the agent's tool groups) |
-| `arguments` | no | Key-value map passed as JSON arguments to the tool |
+| `arguments` | no | Key-value map passed as JSON arguments to the tool. String values support the `%p` wildcard, which is replaced with the user's prompt before the tool is called |
+
+```yaml
+initial_tool_calls:
+  - tool: grep
+    arguments:
+      pattern: "%p"
+```
 
 The tool calls and their results are emitted as `tools_input`/`tools_output` blocks and injected into the message history as if the agent had made those calls. This only runs on the first message of a new conversation (not on resume).
 

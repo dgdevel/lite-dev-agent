@@ -99,9 +99,10 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 		var toolCalls []llm.ToolCall
 		var toolResultMsgs []llm.Message
 
-		for i, itc := range a.Config.InitialToolCalls {
-			argsJSON, _ := json.Marshal(itc.Arguments)
-			argsStr := string(argsJSON)
+	for i, itc := range a.Config.InitialToolCalls {
+		expandedArgs := replacePromptInArgs(itc.Arguments, opts.UserMessage)
+		argsJSON, _ := json.Marshal(expandedArgs)
+		argsStr := string(argsJSON)
 			callID := fmt.Sprintf("initial_%d", i)
 
 			tc := llm.ToolCall{
@@ -343,6 +344,31 @@ func (u *TokenUsage) writeChildren(b *strings.Builder, prefix string, ts string)
 			childPrefix += "│   "
 		}
 		child.writeChildren(b, childPrefix, ts)
+	}
+}
+
+func replacePromptInArgs(args map[string]interface{}, prompt string) map[string]interface{} {
+	result := make(map[string]interface{}, len(args))
+	for k, v := range args {
+		result[k] = replacePromptInValue(v, prompt)
+	}
+	return result
+}
+
+func replacePromptInValue(v interface{}, prompt string) interface{} {
+	switch val := v.(type) {
+	case string:
+		return strings.ReplaceAll(val, "%p", prompt)
+	case map[string]interface{}:
+		return replacePromptInArgs(val, prompt)
+	case []interface{}:
+		result := make([]interface{}, len(val))
+		for i, elem := range val {
+			result[i] = replacePromptInValue(elem, prompt)
+		}
+		return result
+	default:
+		return v
 	}
 }
 

@@ -33,6 +33,9 @@ agents:
     #   - tool: read
     #     arguments:
     #       path: README.md
+    #   - tool: grep
+    #     arguments:
+    #       pattern: "%p"
   - name: project_searcher
     tools: my-mcp
     expose: File system researcher
