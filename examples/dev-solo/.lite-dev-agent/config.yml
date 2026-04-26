@@ -1,7 +1,7 @@
 llms:
   - name: thinker
     api_base: http://192.168.1.2:15000/v1
-    model: AesSedai--Qwen3.6-35B-A3B-Q5_K_M
+    model: AesSedai--Qwen3.6-35B-A3B-Q6_K
     default: true
 
 mcp:
@@ -18,7 +18,7 @@ agents:
     initial_tool_calls:
       - tool: ls
         arguments:
-          path: .
+          pattern: .
     system_prompt: >
       You are a software developer.
 
