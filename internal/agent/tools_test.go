@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dgdevel/lite-dev-agent/internal/llm"
 	"github.com/dgdevel/lite-dev-agent/internal/protocol"
@@ -176,5 +179,113 @@ func TestResolveToolsMissingGroup(t *testing.T) {
 	defs := ResolveTools([]string{"nonexistent"}, r)
 	if len(defs) != 0 {
 		t.Fatalf("expected 0 defs for missing group, got %d", len(defs))
+	}
+}
+
+type slowProvider struct {
+	defs     []llm.ToolDefinition
+	calls    map[string]string
+	mu       sync.Mutex
+	maxConcurrent int32
+	concurrent   int32
+}
+
+func newSlowProvider(defs []llm.ToolDefinition) *slowProvider {
+	return &slowProvider{
+		defs:  defs,
+		calls: make(map[string]string),
+	}
+}
+
+func (m *slowProvider) ToolDefinitions() []llm.ToolDefinition {
+	return m.defs
+}
+
+func (m *slowProvider) CallTool(ctx context.Context, name string, arguments string) (ToolResult, error) {
+	cur := atomic.AddInt32(&m.concurrent, 1)
+	defer atomic.AddInt32(&m.concurrent, -1)
+
+	for {
+		old := atomic.LoadInt32(&m.maxConcurrent)
+		if cur <= old || atomic.CompareAndSwapInt32(&m.maxConcurrent, old, cur) {
+			break
+		}
+	}
+
+	m.mu.Lock()
+	m.calls[name] = arguments
+	m.mu.Unlock()
+
+	time.Sleep(50 * time.Millisecond)
+
+	if name == "fail_tool" {
+		return ToolResult{Content: "tool failed", IsError: true}, nil
+	}
+	return ToolResult{Content: "result of " + name}, nil
+}
+
+func TestConcurrentToolCalls(t *testing.T) {
+	r := NewToolRegistry()
+	p := newSlowProvider([]llm.ToolDefinition{
+		{Type: "function", Function: llm.Function{Name: "tool_a", Description: "Tool A"}},
+		{Type: "function", Function: llm.Function{Name: "tool_b", Description: "Tool B"}},
+		{Type: "function", Function: llm.Function{Name: "tool_c", Description: "Tool C"}},
+	})
+	r.Register("test", p)
+
+	toolCalls := []llm.ToolCallDelta{
+		{ID: "call_1", Function: struct {
+			Name      string `json:"name,omitempty"`
+			Arguments string `json:"arguments,omitempty"`
+		}{Name: "tool_a", Arguments: `{"x": 1}`}},
+		{ID: "call_2", Function: struct {
+			Name      string `json:"name,omitempty"`
+			Arguments string `json:"arguments,omitempty"`
+		}{Name: "tool_b", Arguments: `{"x": 2}`}},
+		{ID: "call_3", Function: struct {
+			Name      string `json:"name,omitempty"`
+			Arguments string `json:"arguments,omitempty"`
+		}{Name: "tool_c", Arguments: `{"x": 3}`}},
+	}
+
+	type callResult struct {
+		content string
+	}
+	callResults := make([]callResult, len(toolCalls))
+	var wg sync.WaitGroup
+	for i := range toolCalls {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			tc := toolCalls[idx]
+			result, err := r.CallTool(context.Background(), tc.Function.Name, tc.Function.Arguments)
+			if err != nil {
+				result = ToolResult{Content: "error", IsError: true}
+			}
+			content := result.Content
+			if content == "" {
+				content = "(no output)"
+			}
+			callResults[idx] = callResult{content: content}
+		}(i)
+	}
+	wg.Wait()
+
+	if callResults[0].content != "result of tool_a" {
+		t.Fatalf("call 0: %s", callResults[0].content)
+	}
+	if callResults[1].content != "result of tool_b" {
+		t.Fatalf("call 1: %s", callResults[1].content)
+	}
+	if callResults[2].content != "result of tool_c" {
+		t.Fatalf("call 2: %s", callResults[2].content)
+	}
+
+	if atomic.LoadInt32(&p.maxConcurrent) < 2 {
+		t.Fatalf("expected at least 2 concurrent calls, got %d", atomic.LoadInt32(&p.maxConcurrent))
+	}
+
+	if len(p.calls) != 3 {
+		t.Fatalf("expected 3 calls, got %d", len(p.calls))
 	}
 }

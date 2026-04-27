@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dgdevel/lite-dev-agent/internal/config"
@@ -99,10 +100,17 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 		var toolCalls []llm.ToolCall
 		var toolResultMsgs []llm.Message
 
-	for i, itc := range a.Config.InitialToolCalls {
-		expandedArgs := replacePromptInArgs(itc.Arguments, opts.UserMessage)
-		argsJSON, _ := json.Marshal(expandedArgs)
-		argsStr := string(argsJSON)
+		type initialCallResult struct {
+			index   int
+			content string
+		}
+		initialResults := make([]initialCallResult, len(a.Config.InitialToolCalls))
+		var wg sync.WaitGroup
+
+		for i, itc := range a.Config.InitialToolCalls {
+			expandedArgs := replacePromptInArgs(itc.Arguments, opts.UserMessage)
+			argsJSON, _ := json.Marshal(expandedArgs)
+			argsStr := string(argsJSON)
 			callID := fmt.Sprintf("initial_%d", i)
 
 			tc := llm.ToolCall{
@@ -119,24 +127,31 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 				protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsInput, FormatToolInput(itc.Tool, argsStr))
 			}
 
-			result, err := a.Registry.CallTool(ctx, itc.Tool, argsStr)
-			if err != nil {
-				result = ToolResult{Content: fmt.Sprintf("tool error: %v", err), IsError: true}
-			}
+			wg.Add(1)
+			go func(idx int, toolName, arguments string) {
+				defer wg.Done()
+				result, err := a.Registry.CallTool(ctx, toolName, arguments)
+				if err != nil {
+					result = ToolResult{Content: fmt.Sprintf("tool error: %v", err), IsError: true}
+				}
+				content := result.Content
+				if content == "" {
+					content = "(no output)"
+				}
+				initialResults[idx] = initialCallResult{index: idx, content: content}
+			}(i, itc.Tool, argsStr)
+		}
+		wg.Wait()
 
-			content := result.Content
-			if content == "" {
-				content = "(no output)"
-			}
-
+		for i, res := range initialResults {
 			toolResultMsgs = append(toolResultMsgs, llm.Message{
 				Role:       "tool",
-				Content:    content,
-				ToolCallID: callID,
+				Content:    res.content,
+				ToolCallID: fmt.Sprintf("initial_%d", i),
 			})
 
 			if a.Filter.Enabled(protocol.BlockToolsOutput) {
-				protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsOutput, FormatToolOutput(itc.Tool, content))
+				protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsOutput, FormatToolOutput(a.Config.InitialToolCalls[i].Tool, res.content))
 			}
 		}
 
@@ -226,38 +241,52 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 
 			for i := range toolCalls {
 				tc := toolCalls[i]
-				toolName := tc.Function.Name
-				toolArgs := tc.Function.Arguments
-
 				if a.Filter.Enabled(protocol.BlockToolsInput) {
-					protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsInput, FormatToolInput(toolName, toolArgs))
+					protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsInput, FormatToolInput(tc.Function.Name, tc.Function.Arguments))
 				}
+			}
 
-				result, err := a.Registry.CallTool(ctx, toolName, toolArgs)
-				if err != nil {
-					result = ToolResult{
-						Content: fmt.Sprintf("tool error: %v", err),
-						IsError: true,
+			type callResult struct {
+				content string
+				usage   *TokenUsage
+			}
+			callResults := make([]callResult, len(toolCalls))
+			var wg sync.WaitGroup
+			for i := range toolCalls {
+				wg.Add(1)
+				go func(idx int) {
+					defer wg.Done()
+					tc := toolCalls[idx]
+					result, err := a.Registry.CallTool(ctx, tc.Function.Name, tc.Function.Arguments)
+					if err != nil {
+						result = ToolResult{
+							Content: fmt.Sprintf("tool error: %v", err),
+							IsError: true,
+						}
 					}
-				}
+					content := result.Content
+					if content == "" {
+						content = "(no output)"
+					}
+					callResults[idx] = callResult{content: content, usage: result.Usage}
+				}(i)
+			}
+			wg.Wait()
 
-				toolContent := result.Content
-				if toolContent == "" {
-					toolContent = "(no output)"
-				}
-
+			for i, tc := range toolCalls {
+				res := callResults[i]
 				messages = append(messages, llm.Message{
 					Role:       "tool",
-					Content:    toolContent,
+					Content:    res.content,
 					ToolCallID: tc.ID,
 				})
 
 				if a.Filter.Enabled(protocol.BlockToolsOutput) {
-					protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsOutput, FormatToolOutput(toolName, toolContent))
+					protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsOutput, FormatToolOutput(tc.Function.Name, res.content))
 				}
 
-				if result.Usage != nil {
-					usage.Children = append(usage.Children, result.Usage)
+				if res.usage != nil {
+					usage.Children = append(usage.Children, res.usage)
 				}
 			}
 
