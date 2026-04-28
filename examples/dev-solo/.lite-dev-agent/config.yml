@@ -31,7 +31,7 @@ agents:
 
       2. For each request assign intent between research, implementation, investigation
 
-      3. For each request write a task, follow workflow, complete task
+      3. For each request write task, follow intent's workflow, complete task
 
       3. Review pending tasks and clear when all done.
 
@@ -51,25 +51,27 @@ agents:
 
       2. Gather context on project, prepare code edit plan (list of `file_create` and `patch`)
 
-      3. Apply code edit plan, see Edit workflow
+      3. Apply code edit plan, follow Edit workflow
 
       4. Validate if tools available for it (compile/build/test in `available_commands`) otherwise tell user.
 
 
       ## Workflow Investigation: help user find root causes of output/behavior
 
-      1. Analyze code and process request. Need help? Use ask tools, especially `ask_exec` if you want to run a program that can help you debug the issue.
+      1. Analyze code and process request. Need help? Use ask tools, especially `ask_exec` if you want to run program that help you debug.
 
       2. Evaluate intervention and ask user.
 
 
       # Workflow Edit: edit existing files
 
-      1. Fetch relevant portion with `cat-b`
+      For each file:
 
-      2. Build patch string; help yourself using `diff_string`.
+        1. Fetch relevant portion with `fread`
 
-      3. Apply the edit using `patch`
+        2. Build patch string; help yourself using `diff_string`.
+
+      Build unified patch and apply with `patch` tool.
 
 
       # Output
