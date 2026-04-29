@@ -7,7 +7,7 @@ llms:
 mcp:
   - name: devkit
     type: stdio
-    command: "../nixdevkit/nixdevkit-mcp --ignore ^\\. --enable-indexer %s"
+    command: "../nixdevkit/nixdevkit-mcp --ignore .* --enable-indexer %s"
 
 agents:
 
