@@ -1,0 +1,343 @@
+package web
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/dgdevel/lite-dev-agent/internal/agent"
+	"github.com/dgdevel/lite-dev-agent/internal/config"
+	"github.com/dgdevel/lite-dev-agent/internal/conversation"
+	"github.com/dgdevel/lite-dev-agent/internal/llm"
+	"github.com/dgdevel/lite-dev-agent/internal/protocol"
+	"github.com/dgdevel/lite-dev-agent/internal/tools"
+)
+
+type Server struct {
+	cfg              *config.Config
+	rootPath         string
+	llmClients       map[string]*llm.Client
+	mcpProviders     map[string]*tools.MCPProvider
+	conversationsDir string
+
+	mu       sync.Mutex
+	active   bool
+	cancelFn context.CancelFunc
+}
+
+func NewServer(cfg *config.Config, rootPath string, llmClients map[string]*llm.Client, mcpProviders map[string]*tools.MCPProvider) *Server {
+	conversationsDir := filepath.Join(rootPath, ".lite-dev-agent", "conversations")
+	os.MkdirAll(conversationsDir, 0755)
+
+	return &Server{
+		cfg:              cfg,
+		rootPath:         rootPath,
+		llmClients:       llmClients,
+		mcpProviders:     mcpProviders,
+		conversationsDir: conversationsDir,
+	}
+}
+
+func (s *Server) Start(addr string) error {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/", s.handleIndex)
+	mux.HandleFunc("GET /api/conversations", s.handleListConversations)
+	mux.HandleFunc("GET /api/conversations/{filename}", s.handleGetConversation)
+	mux.HandleFunc("POST /api/conversations", s.handleNewConversation)
+	mux.HandleFunc("POST /api/conversations/{filename}/chat", s.handleChat)
+	mux.HandleFunc("POST /api/abort", s.handleAbort)
+
+	fmt.Fprintf(os.Stderr, "web server listening on %s\n", addr)
+	return http.ListenAndServe(addr, mux)
+}
+
+func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(indexHTML)
+}
+
+func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request) {
+	entries, err := os.ReadDir(s.conversationsDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list conversations"})
+		return
+	}
+
+	type convInfo struct {
+		Filename string `json:"filename"`
+		Modified string `json:"modified"`
+		Size     int64  `json:"size"`
+	}
+
+	var convs []convInfo
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".txt") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		convs = append(convs, convInfo{
+			Filename: e.Name(),
+			Modified: info.ModTime().Format(time.RFC3339),
+			Size:     info.Size(),
+		})
+	}
+
+	sort.Slice(convs, func(i, j int) bool {
+		return convs[i].Modified > convs[j].Modified
+	})
+
+	if convs == nil {
+		convs = []convInfo{}
+	}
+	writeJSON(w, http.StatusOK, convs)
+}
+
+func (s *Server) handleGetConversation(w http.ResponseWriter, r *http.Request) {
+	filename := sanitizeFilename(r.PathValue("filename"))
+	if filename == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid filename"})
+		return
+	}
+
+	convPath := filepath.Join(s.conversationsDir, filename)
+	blocks, err := conversation.ParseFile(convPath)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "conversation not found"})
+		return
+	}
+
+	type blockInfo struct {
+		Type     string  `json:"type"`
+		Agent    string  `json:"agent"`
+		Level    int     `json:"level"`
+		Content  string  `json:"content"`
+		Duration *string `json:"duration,omitempty"`
+	}
+
+	var result []blockInfo
+	for _, b := range blocks {
+		if b.Header.BlockType == protocol.BlockWaitingInput {
+			continue
+		}
+		bi := blockInfo{
+			Type:    b.Header.BlockType.String(),
+			Agent:   b.Header.AgentName,
+			Level:   b.Header.Level,
+			Content: stripAllTimestamps(b.Content),
+		}
+		if b.Footer != nil {
+			d := formatDuration(b.Footer.Duration)
+			bi.Duration = &d
+		}
+		result = append(result, bi)
+	}
+
+	if result == nil {
+		result = []blockInfo{}
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleNewConversation(w http.ResponseWriter, r *http.Request) {
+	log, err := conversation.NewLog(s.rootPath)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create conversation"})
+		return
+	}
+	filename := filepath.Base(log.Path())
+	log.Close()
+
+	writeJSON(w, http.StatusOK, map[string]string{"filename": filename})
+}
+
+func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
+	filename := sanitizeFilename(r.PathValue("filename"))
+	if filename == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid filename"})
+		return
+	}
+
+	var body struct {
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Message == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid message"})
+		return
+	}
+
+	s.mu.Lock()
+	if s.active {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "agent is already running"})
+		return
+	}
+	s.active = true
+	ctx, cancel := context.WithCancel(r.Context())
+	s.cancelFn = cancel
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		s.active = false
+		s.cancelFn = nil
+		s.mu.Unlock()
+	}()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	flusher, _ := w.(http.Flusher)
+
+	eventCh := make(chan Event, 256)
+
+	convPath := filepath.Join(s.conversationsDir, filename)
+	ensureFile(convPath)
+
+	convLog, err := os.OpenFile(convPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		sseSend(w, flusher, Event{Type: "error", Content: "failed to open conversation log"})
+		return
+	}
+
+	var history []llm.Message
+	isResume := false
+	if info, _ := os.Stat(convPath); info != nil && info.Size() > 0 {
+		blocks, err := conversation.ParseFile(convPath)
+		if err == nil && len(blocks) > 0 {
+			defaultSP := s.cfg.DefaultAgent().SystemPrompt
+			reconstructed := conversation.ReconstructFromBlocks(blocks, defaultSP)
+			history = reconstructed.Messages
+			isResume = len(history) > 0
+		}
+	}
+
+	dw := NewDirectWriter(eventCh, convLog)
+	protocol.WriteBeginConversation(dw, convPath, isResume)
+
+	_, mainAgent := s.createAgents(dw)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := mainAgent.Run(ctx, agent.RunOptions{
+			UserMessage: body.Message,
+			History:     history,
+		})
+		done <- err
+	}()
+
+	go func() {
+		select {
+		case <-done:
+		case <-ctx.Done():
+		}
+		protocol.WriteEndConversation(dw, convPath)
+		convLog.Close()
+		eventCh <- Event{Type: "done"}
+		close(eventCh)
+	}()
+
+	for event := range eventCh {
+		sseSend(w, flusher, event)
+	}
+}
+
+func (s *Server) handleAbort(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	if s.cancelFn != nil {
+		s.cancelFn()
+	}
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) createAgents(writer io.Writer) (map[string]*agent.Agent, *agent.Agent) {
+	filter := protocol.NewOutputFilter("")
+	agentToolProvider := tools.NewAgentToolProvider(s.cfg, writer, filter, &s.cfg.Timeouts)
+
+	agents := make(map[string]*agent.Agent)
+	var defaultAgent *agent.Agent
+
+	for i := range s.cfg.Agents {
+		ac := &s.cfg.Agents[i]
+		llmCfg := ac.ResolveLLM(s.cfg)
+		client := s.llmClients[ac.Name]
+
+		registry := agent.NewToolRegistry()
+		for _, toolGroup := range ac.ToolList() {
+			switch toolGroup {
+			case "agents":
+				registry.Register("agents", agentToolProvider)
+			case "ask":
+			default:
+				if mp, ok := s.mcpProviders[toolGroup]; ok {
+					registry.Register(toolGroup, mp)
+				}
+			}
+		}
+
+		a := &agent.Agent{
+			Config:    ac,
+			LLMConfig: llmCfg,
+			LLM:       client,
+			Registry:  registry,
+			Writer:    writer,
+			Filter:    filter,
+			Timeouts:  &s.cfg.Timeouts,
+			IsMain:    ac.Default,
+		}
+
+		agents[ac.Name] = a
+		agentToolProvider.Register(a)
+
+		if ac.Default {
+			defaultAgent = a
+		}
+	}
+
+	return agents, defaultAgent
+}
+
+func sseSend(w http.ResponseWriter, flusher http.Flusher, event Event) {
+	data, _ := json.Marshal(event)
+	fmt.Fprintf(w, "data: %s\n\n", data)
+	flusher.Flush()
+}
+
+func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
+
+func sanitizeFilename(name string) string {
+	name = filepath.Base(name)
+	if name == "." || name == ".." {
+		return ""
+	}
+	return name
+}
+
+func ensureFile(path string) {
+	os.MkdirAll(filepath.Dir(path), 0755)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0644)
+	if err == nil {
+		f.Close()
+	}
+}

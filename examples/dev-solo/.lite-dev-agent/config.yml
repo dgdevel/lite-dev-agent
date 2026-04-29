@@ -7,7 +7,7 @@ llms:
 mcp:
   - name: devkit
     type: stdio
-    command: "../nixdevkit/nixdevkit --ignore ^\\. --enable-indexer %s"
+    command: "../nixdevkit/nixdevkit-mcp --ignore ^\\. --enable-indexer %s"
 
 agents:
 
@@ -21,7 +21,7 @@ agents:
           prompt: "%p"
       - tool: ls
         arguments:
-          pattern: .
+          pathspec: .
     system_prompt: >
       You are a software developer.
 
