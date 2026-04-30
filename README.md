@@ -27,7 +27,18 @@ Requires Go 1.26+. Produces the `lite-dev-agent` binary.
 
 ## Configuration
 
-Place a config file at `ROOT_PATH/.lite-dev-agent/config.yml`.
+Configuration is loaded from two locations and merged:
+
+1. **Global config**: `$XDG_CONFIG_HOME/lite-dev-agent/config.yml` (falls back to `~/.config/lite-dev-agent/config.yml` if `XDG_CONFIG_HOME` is unset)
+2. **Local config**: `ROOT_PATH/.lite-dev-agent/config.yml`
+
+If both exist, the local config overrides the global config. Merge rules:
+
+- **LLMs, MCPs, Agents**: entries are matched by `name`. Local entries override global entries with the same name. New names are appended. Unmatched global entries are kept.
+- **Timeouts**: non-empty local fields override global fields.
+- **Blocks**: local entries override global entries for the same block type key.
+
+At least one config file must exist.
 
 See `config.template.yml` for a full example.
 

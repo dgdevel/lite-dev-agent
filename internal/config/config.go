@@ -9,6 +9,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func xdgConfigPath() string {
+	configDir := os.Getenv("XDG_CONFIG_HOME")
+	if configDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		configDir = filepath.Join(home, ".config")
+	}
+	return filepath.Join(configDir, "lite-dev-agent", "config.yml")
+}
+
 type BlockStyleConfig struct {
 	Color string `yaml:"color"`
 	Bold  bool   `yaml:"bold"`
@@ -86,15 +98,40 @@ func (t *TimeoutConfig) ToolExecutionDuration() time.Duration {
 }
 
 func Load(rootPath string) (*Config, error) {
-	configPath := filepath.Join(rootPath, ".lite-dev-agent", "config.yml")
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("reading config %s: %w", configPath, err)
+	var global *Config
+	globalPath := xdgConfigPath()
+	if globalPath != "" {
+		if data, err := os.ReadFile(globalPath); err == nil {
+			var g Config
+			if err := yaml.Unmarshal(data, &g); err != nil {
+				return nil, fmt.Errorf("parsing global config %s: %w", globalPath, err)
+			}
+			global = &g
+		}
+	}
+
+	localPath := filepath.Join(rootPath, ".lite-dev-agent", "config.yml")
+	localData, localErr := os.ReadFile(localPath)
+	var local *Config
+	if localErr == nil {
+		var l Config
+		if err := yaml.Unmarshal(localData, &l); err != nil {
+			return nil, fmt.Errorf("parsing local config %s: %w", localPath, err)
+		}
+		local = &l
+	}
+
+	if global == nil && local == nil {
+		return nil, fmt.Errorf("no config found (checked %s and %s)", globalPath, localPath)
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing config: %w", err)
+	if global != nil && local != nil {
+		cfg = *mergeConfigs(global, local)
+	} else if global != nil {
+		cfg = *global
+	} else {
+		cfg = *local
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -102,6 +139,101 @@ func Load(rootPath string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+func mergeConfigs(global, local *Config) *Config {
+	result := *global
+	result.LLMs = mergeLLMs(global.LLMs, local.LLMs)
+	result.MCPs = mergeMCPs(global.MCPs, local.MCPs)
+	result.Agents = mergeAgents(global.Agents, local.Agents)
+	result.Timeouts = mergeTimeouts(global.Timeouts, local.Timeouts)
+	result.Blocks = mergeBlocks(global.Blocks, local.Blocks)
+	return &result
+}
+
+func mergeLLMs(global, local []LLMConfig) []LLMConfig {
+	merged := make([]LLMConfig, len(global))
+	copy(merged, global)
+	localByName := make(map[string]int, len(local))
+	for i, l := range local {
+		localByName[l.Name] = i
+	}
+	for i, g := range global {
+		if idx, ok := localByName[g.Name]; ok {
+			merged[i] = local[idx]
+			delete(localByName, g.Name)
+		}
+	}
+	for _, l := range local {
+		if _, ok := localByName[l.Name]; ok {
+			merged = append(merged, l)
+		}
+	}
+	return merged
+}
+
+func mergeMCPs(global, local []MCPConfig) []MCPConfig {
+	merged := make([]MCPConfig, len(global))
+	copy(merged, global)
+	localByName := make(map[string]int, len(local))
+	for i, l := range local {
+		localByName[l.Name] = i
+	}
+	for i, g := range global {
+		if idx, ok := localByName[g.Name]; ok {
+			merged[i] = local[idx]
+			delete(localByName, g.Name)
+		}
+	}
+	for _, l := range local {
+		if _, ok := localByName[l.Name]; ok {
+			merged = append(merged, l)
+		}
+	}
+	return merged
+}
+
+func mergeAgents(global, local []AgentConfig) []AgentConfig {
+	merged := make([]AgentConfig, len(global))
+	copy(merged, global)
+	localByName := make(map[string]int, len(local))
+	for i, l := range local {
+		localByName[l.Name] = i
+	}
+	for i, g := range global {
+		if idx, ok := localByName[g.Name]; ok {
+			merged[i] = local[idx]
+			delete(localByName, g.Name)
+		}
+	}
+	for _, l := range local {
+		if _, ok := localByName[l.Name]; ok {
+			merged = append(merged, l)
+		}
+	}
+	return merged
+}
+
+func mergeTimeouts(global, local TimeoutConfig) TimeoutConfig {
+	result := global
+	if local.LLMRequest != "" {
+		result.LLMRequest = local.LLMRequest
+	}
+	if local.ToolExecution != "" {
+		result.ToolExecution = local.ToolExecution
+	}
+	return result
+}
+
+func mergeBlocks(global, local map[string]BlockStyleConfig) map[string]BlockStyleConfig {
+	result := make(map[string]BlockStyleConfig, len(global)+len(local))
+	for k, v := range global {
+		result[k] = v
+	}
+	for k, v := range local {
+		result[k] = v
+	}
+	return result
 }
 
 func (c *Config) validate() error {

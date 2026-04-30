@@ -9,6 +9,39 @@ import (
 
 func writeTestConfig(t *testing.T, dir, content string) {
 	t.Helper()
+	xdgDir := t.TempDir()
+	orig := os.Getenv("XDG_CONFIG_HOME")
+	os.Setenv("XDG_CONFIG_HOME", xdgDir)
+	t.Cleanup(func() { os.Setenv("XDG_CONFIG_HOME", orig) })
+	cfgDir := filepath.Join(dir, ".lite-dev-agent")
+	if err := os.MkdirAll(cfgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yml"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeGlobalTestConfig(t *testing.T, xdgDir, content string) {
+	t.Helper()
+	cfgDir := filepath.Join(xdgDir, "lite-dev-agent")
+	if err := os.MkdirAll(cfgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yml"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func withXDGConfigHome(t *testing.T, xdgDir string) {
+	t.Helper()
+	orig := os.Getenv("XDG_CONFIG_HOME")
+	os.Setenv("XDG_CONFIG_HOME", xdgDir)
+	t.Cleanup(func() { os.Setenv("XDG_CONFIG_HOME", orig) })
+}
+
+func writeLocalConfig(t *testing.T, dir, content string) {
+	t.Helper()
 	cfgDir := filepath.Join(dir, ".lite-dev-agent")
 	if err := os.MkdirAll(cfgDir, 0755); err != nil {
 		t.Fatal(err)
@@ -808,5 +841,378 @@ agents:
 	}
 	if len(cfg.Blocks) != 0 {
 		t.Fatalf("expected 0 block overrides, got %d", len(cfg.Blocks))
+	}
+}
+
+func TestLoadGlobalOnly(t *testing.T) {
+	xdgDir := t.TempDir()
+	localDir := t.TempDir()
+	withXDGConfigHome(t, xdgDir)
+	writeGlobalTestConfig(t, xdgDir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: test
+`)
+	cfg, err := Load(localDir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.DefaultLLM().Name != "a" {
+		t.Fatalf("expected default llm a, got %s", cfg.DefaultLLM().Name)
+	}
+}
+
+func TestLoadLocalOnly(t *testing.T) {
+	xdgDir := t.TempDir()
+	localDir := t.TempDir()
+	withXDGConfigHome(t, xdgDir)
+	writeTestConfig(t, localDir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: test
+`)
+	cfg, err := Load(localDir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.DefaultLLM().Name != "a" {
+		t.Fatalf("expected default llm a, got %s", cfg.DefaultLLM().Name)
+	}
+}
+
+func TestLoadNoConfigAtAll(t *testing.T) {
+	xdgDir := t.TempDir()
+	localDir := t.TempDir()
+	withXDGConfigHome(t, xdgDir)
+	_, err := Load(localDir)
+	if err == nil {
+		t.Fatal("expected error when no config found")
+	}
+}
+
+func TestLoadMergeOverrideLLM(t *testing.T) {
+	xdgDir := t.TempDir()
+	localDir := t.TempDir()
+	withXDGConfigHome(t, xdgDir)
+	writeGlobalTestConfig(t, xdgDir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+    model: global-model
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: test
+`)
+	writeTestConfig(t, localDir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v2
+    model: local-model
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: test
+`)
+	cfg, err := Load(localDir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.DefaultLLM().Model != "local-model" {
+		t.Fatalf("expected local-model, got %s", cfg.DefaultLLM().Model)
+	}
+	if cfg.DefaultLLM().APIBase != "http://localhost/v2" {
+		t.Fatalf("expected http://localhost/v2, got %s", cfg.DefaultLLM().APIBase)
+	}
+}
+
+func TestLoadMergeAddsLLM(t *testing.T) {
+	xdgDir := t.TempDir()
+	localDir := t.TempDir()
+	withXDGConfigHome(t, xdgDir)
+	writeGlobalTestConfig(t, xdgDir, `
+llms:
+  - name: global-llm
+    default: true
+    api_base: http://localhost/v1
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: test
+`)
+	writeTestConfig(t, localDir, `
+llms:
+  - name: global-llm
+    default: true
+    api_base: http://localhost/v1
+  - name: local-llm
+    api_base: http://localhost/v2
+agents:
+  - name: x
+    default: true
+    llm: local-llm
+    tools: devkit
+    system_prompt: test
+`)
+	cfg, err := Load(localDir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.LLMs) != 2 {
+		t.Fatalf("expected 2 llms, got %d", len(cfg.LLMs))
+	}
+	if cfg.FindLLM("local-llm") == nil {
+		t.Fatal("expected to find local-llm")
+	}
+}
+
+func TestLoadMergeOverrideAgent(t *testing.T) {
+	xdgDir := t.TempDir()
+	localDir := t.TempDir()
+	withXDGConfigHome(t, xdgDir)
+	writeGlobalTestConfig(t, xdgDir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: global prompt
+`)
+	writeTestConfig(t, localDir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: local prompt
+`)
+	cfg, err := Load(localDir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.DefaultAgent().SystemPrompt != "local prompt" {
+		t.Fatalf("expected 'local prompt', got %q", cfg.DefaultAgent().SystemPrompt)
+	}
+}
+
+func TestLoadMergeAddsAgent(t *testing.T) {
+	xdgDir := t.TempDir()
+	localDir := t.TempDir()
+	withXDGConfigHome(t, xdgDir)
+	writeGlobalTestConfig(t, xdgDir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+agents:
+  - name: global-agent
+    default: true
+    tools: devkit
+    system_prompt: global
+`)
+	writeTestConfig(t, localDir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+agents:
+  - name: global-agent
+    default: true
+    tools: devkit
+    system_prompt: global
+  - name: local-agent
+    tools: devkit
+    expose: local worker
+    system_prompt: local
+`)
+	cfg, err := Load(localDir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Agents) != 2 {
+		t.Fatalf("expected 2 agents, got %d", len(cfg.Agents))
+	}
+	if cfg.FindAgent("local-agent") == nil {
+		t.Fatal("expected to find local-agent")
+	}
+}
+
+func TestLoadMergeMCPs(t *testing.T) {
+	xdgDir := t.TempDir()
+	localDir := t.TempDir()
+	withXDGConfigHome(t, xdgDir)
+	writeGlobalTestConfig(t, xdgDir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+mcp:
+  - name: global-mcp
+    type: stdio
+    command: "global-cmd"
+agents:
+  - name: x
+    default: true
+    tools: global-mcp
+    system_prompt: test
+`)
+	writeLocalConfig(t, localDir, `
+mcp:
+  - name: global-mcp
+    type: stdio
+    command: "local-cmd"
+  - name: local-mcp
+    type: http
+    url: http://localhost:8080/mcp
+`)
+	cfg, err := Load(localDir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.MCPs) != 2 {
+		t.Fatalf("expected 2 mcps, got %d", len(cfg.MCPs))
+	}
+	m := cfg.FindMCP("global-mcp")
+	if m == nil || m.Command != "local-cmd" {
+		t.Fatalf("expected global-mcp overridden to local-cmd, got %v", m)
+	}
+	if cfg.FindMCP("local-mcp") == nil {
+		t.Fatal("expected to find local-mcp")
+	}
+}
+
+func TestLoadMergeTimeouts(t *testing.T) {
+	xdgDir := t.TempDir()
+	localDir := t.TempDir()
+	withXDGConfigHome(t, xdgDir)
+	writeGlobalTestConfig(t, xdgDir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: test
+timeouts:
+  llm_request: 45m
+  tool_execution: 15m
+`)
+	writeLocalConfig(t, localDir, `
+timeouts:
+  llm_request: 5m
+`)
+	cfg, err := Load(localDir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Timeouts.LLMRequestDuration() != 5*time.Minute {
+		t.Fatalf("expected 5m, got %v", cfg.Timeouts.LLMRequestDuration())
+	}
+	if cfg.Timeouts.ToolExecutionDuration() != 15*time.Minute {
+		t.Fatalf("expected 15m (from global), got %v", cfg.Timeouts.ToolExecutionDuration())
+	}
+}
+
+func TestLoadMergeBlocks(t *testing.T) {
+	xdgDir := t.TempDir()
+	localDir := t.TempDir()
+	withXDGConfigHome(t, xdgDir)
+	writeGlobalTestConfig(t, xdgDir, `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: test
+blocks:
+  agent_response:
+    color: red
+  waiting_user_input:
+    color: blue
+`)
+	writeLocalConfig(t, localDir, `
+blocks:
+  agent_response:
+    color: green
+    bold: true
+`)
+	cfg, err := Load(localDir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Blocks) != 2 {
+		t.Fatalf("expected 2 block overrides, got %d", len(cfg.Blocks))
+	}
+	ar := cfg.Blocks["agent_response"]
+	if ar.Color != "green" || !ar.Bold {
+		t.Fatalf("agent_response: got color=%q bold=%v", ar.Color, ar.Bold)
+	}
+	ws := cfg.Blocks["waiting_user_input"]
+	if ws.Color != "blue" {
+		t.Fatalf("waiting_user_input: expected blue, got %q", ws.Color)
+	}
+}
+
+func TestLoadXDGFallback(t *testing.T) {
+	orig := os.Getenv("XDG_CONFIG_HOME")
+	os.Unsetenv("XDG_CONFIG_HOME")
+	t.Cleanup(func() { os.Setenv("XDG_CONFIG_HOME", orig) })
+
+	home := os.Getenv("HOME")
+	fallbackDir := filepath.Join(home, ".config", "lite-dev-agent")
+	if err := os.MkdirAll(fallbackDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(filepath.Join(home, ".config", "lite-dev-agent")) })
+
+	configContent := `
+llms:
+  - name: a
+    default: true
+    api_base: http://localhost/v1
+agents:
+  - name: x
+    default: true
+    tools: devkit
+    system_prompt: test
+`
+	if err := os.WriteFile(filepath.Join(fallbackDir, "config.yml"), []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(t.TempDir())
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.DefaultLLM().Name != "a" {
+		t.Fatalf("expected default llm a, got %s", cfg.DefaultLLM().Name)
 	}
 }
