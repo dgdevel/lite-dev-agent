@@ -31,6 +31,7 @@ type Server struct {
 	mu       sync.Mutex
 	active   bool
 	cancelFn context.CancelFunc
+	askHub   *AskHub
 }
 
 func NewServer(cfg *config.Config, rootPath string, llmClients map[string]*llm.Client, mcpProviders map[string]*tools.MCPProvider) *Server {
@@ -43,6 +44,7 @@ func NewServer(cfg *config.Config, rootPath string, llmClients map[string]*llm.C
 		llmClients:       llmClients,
 		mcpProviders:     mcpProviders,
 		conversationsDir: conversationsDir,
+		askHub:           NewAskHub(),
 	}
 }
 
@@ -54,6 +56,7 @@ func (s *Server) Start(addr string) error {
 	mux.HandleFunc("GET /api/conversations/{filename}", s.handleGetConversation)
 	mux.HandleFunc("POST /api/conversations", s.handleNewConversation)
 	mux.HandleFunc("POST /api/conversations/{filename}/chat", s.handleChat)
+	mux.HandleFunc("POST /api/conversations/{filename}/ask/{askId}", s.handleAskResponse)
 	mux.HandleFunc("POST /api/abort", s.handleAbort)
 
 	fmt.Fprintf(os.Stderr, "web server listening on %s\n", addr)
@@ -232,7 +235,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	dw := NewDirectWriter(eventCh, convLog)
 	protocol.WriteBeginConversation(dw, convPath, isResume)
 
-	_, mainAgent := s.createAgents(dw)
+	_, mainAgent := s.createAgents(dw, eventCh)
 
 	done := make(chan error, 1)
 	go func() {
@@ -269,7 +272,29 @@ func (s *Server) handleAbort(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) createAgents(writer io.Writer) (map[string]*agent.Agent, *agent.Agent) {
+func (s *Server) handleAskResponse(w http.ResponseWriter, r *http.Request) {
+	askID := r.PathValue("askId")
+	if askID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing ask ID"})
+		return
+	}
+
+	var body struct {
+		Response string `json:"response"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Response == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid response"})
+		return
+	}
+
+	if s.askHub.Respond(askID, body.Response) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	} else {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown or expired ask ID"})
+	}
+}
+
+func (s *Server) createAgents(writer io.Writer, eventCh chan Event) (map[string]*agent.Agent, *agent.Agent) {
 	filter := protocol.NewOutputFilter("")
 	agentToolProvider := tools.NewAgentToolProvider(s.cfg, writer, filter, &s.cfg.Timeouts)
 
@@ -287,6 +312,7 @@ func (s *Server) createAgents(writer io.Writer) (map[string]*agent.Agent, *agent
 			case "agents":
 				registry.Register("agents", agentToolProvider)
 			case "ask":
+				registry.Register("ask", NewWebAskProvider(ac.Name, s.askHub, eventCh))
 			default:
 				if mp, ok := s.mcpProviders[toolGroup]; ok {
 					registry.Register(toolGroup, mp)

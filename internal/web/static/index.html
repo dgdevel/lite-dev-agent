@@ -127,6 +127,26 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',He
 .block-error .block-header{background:#3d1214;color:var(--red)}
 .block-error .block-content{color:var(--red);font-family:monospace;font-size:13px}
 
+.block-ask{border-left:3px solid var(--cyan)}
+.block-ask .block-header{background:#0d2137;color:var(--cyan)}
+.block-ask .block-content{color:var(--text);padding:10px 12px}
+.ask-question-text{margin-bottom:10px;font-size:13px;line-height:1.5}
+.ask-options{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.ask-option{padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:13px;color:var(--text);transition:background .15s,border-color .15s}
+.ask-option:hover{background:var(--blue-dim);border-color:var(--blue)}
+.ask-option.selected{background:var(--blue-dim);border-color:var(--cyan);color:var(--cyan)}
+.ask-input-row{display:flex;gap:8px;align-items:flex-end}
+.ask-input-row textarea{flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px;font-size:13px;font-family:inherit;resize:none;outline:none;min-height:36px;max-height:120px}
+.ask-input-row textarea:focus{border-color:var(--blue)}
+.ask-input-row button,.ask-exec-actions button{padding:6px 14px;background:var(--blue);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:500;white-space:nowrap}
+.ask-input-row button:hover,.ask-exec-actions button:hover{background:#388bfd}
+.ask-exec-cmdline{font-family:monospace;font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:6px 10px;margin-bottom:10px;color:var(--text)}
+.ask-exec-actions{display:flex;gap:8px}
+.ask-exec-actions .deny-btn{background:transparent;color:var(--red);border:1px solid var(--red)}
+.ask-exec-actions .deny-btn:hover{background:var(--red);color:#fff}
+.ask-answered{color:var(--muted);font-style:italic;font-size:12px;margin-top:8px;padding-top:6px;border-top:1px solid var(--border)}
+.ask-answered span{color:var(--cyan)}
+
 .cursor{display:inline-block;width:2px;height:14px;background:var(--text);animation:blink 1s step-end infinite;vertical-align:text-bottom;margin-left:1px}
 @keyframes blink{50%{opacity:0}}
 
@@ -374,6 +394,9 @@ function handleEvent(event) {
     case 'error':
       handleError(event);
       break;
+    case 'ask_question':
+      handleAskQuestion(event);
+      break;
   }
 }
 
@@ -504,6 +527,139 @@ function toggleToolRaw(btn) {
   } else {
     raw.style.display = 'none';
     btn.textContent = 'Show raw';
+  }
+}
+
+let pendingAskEl = null;
+
+function handleAskQuestion(event) {
+  finalizeBlock();
+  emptyState.style.display = 'none';
+  const q = event.askQuestion;
+  if (!q) return;
+
+  const el = document.createElement('div');
+  el.className = 'block block-ask';
+  const header = document.createElement('div');
+  header.className = 'block-header';
+  const label = q.type === 'exec' ? 'Command Approval' : q.type === 'multiple_choice' ? 'Choose' : 'Question';
+  header.innerHTML = '<span class="toggle">&#9660;</span><span class="agent-name">' + label + '</span><span class="duration"></span>';
+  header.addEventListener('click', (e) => {
+    if (e.target.closest('button') || e.target.closest('.ask-option') || e.target.closest('textarea')) return;
+    el.classList.toggle('collapsed');
+  });
+  el.appendChild(header);
+
+  const content = document.createElement('div');
+  content.className = 'block-content';
+
+  if (q.type === 'open_ended') {
+    content.innerHTML = '<div class="ask-question-text">' + escapeHtml(q.question) + '</div>' +
+      '<div class="ask-input-row"><textarea id="askInput_' + q.id + '" placeholder="Type your answer..." rows="2"></textarea>' +
+      '<button onclick="submitAskResponse(\'' + q.id + '\', this)">Send</button></div>';
+  } else if (q.type === 'multiple_choice') {
+    let html = '<div class="ask-question-text">' + escapeHtml(q.question) + '</div><div class="ask-options">';
+    q.options.forEach((opt, i) => {
+      html += '<div class="ask-option" data-idx="' + (i + 1) + '" onclick="toggleAskOption(this, \'' + q.mode + '\')">' +
+        '<strong>' + (i + 1) + '.</strong> ' + escapeHtml(opt) + '</div>';
+    });
+    if (q.allowOpenEnd) {
+      html += '<div class="ask-option" data-idx="' + (q.options.length + 1) + '" data-open-end="true" onclick="toggleAskOption(this, \'' + q.mode + '\')">' +
+        '<strong>' + (q.options.length + 1) + '.</strong> Type your own response</div>';
+    }
+    html += '</div>';
+    html += '<div class="ask-input-row" id="askOpenEnd_' + q.id + '" style="display:none">' +
+      '<textarea id="askOpenEndInput_' + q.id + '" placeholder="Type your response..." rows="2"></textarea></div>';
+    html += '<button onclick="submitAskChoice(\'' + q.id + '\', \'' + q.mode + '\', ' + JSON.stringify(q.options) + ', ' + q.allowOpenEnd + ', ' + q.options.length + ')" style="margin-top:8px;padding:6px 14px;background:var(--blue);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px">Submit</button>';
+    content.innerHTML = html;
+  } else if (q.type === 'exec') {
+    content.innerHTML = '<div class="ask-question-text">Allow command execution?</div>' +
+      '<div class="ask-exec-cmdline">' + escapeHtml(q.cmdline) + '</div>' +
+      '<div class="ask-exec-actions">' +
+      '<button onclick="submitAskExec(\'' + q.id + '\', true, \'' + escapeHtml(q.cmdline).replace(/'/g, "\\'") + '\', ' + (q.timeout || 0) + ')">Approve</button>' +
+      '<button class="deny-btn" onclick="submitAskExec(\'' + q.id + '\', false, \'\', 0)">Deny</button></div>';
+  }
+
+  el.appendChild(content);
+  messagesEl.appendChild(el);
+  scrollToBottom();
+
+  const ta = content.querySelector('textarea');
+  if (ta) ta.focus();
+  pendingAskEl = el;
+}
+
+function toggleAskOption(optEl, mode) {
+  if (mode === 'single') {
+    optEl.parentElement.querySelectorAll('.ask-option').forEach(o => o.classList.remove('selected'));
+    optEl.classList.add('selected');
+  } else {
+    optEl.classList.toggle('selected');
+  }
+}
+
+function submitAskResponse(askId, btn) {
+  const ta = document.getElementById('askInput_' + askId);
+  if (!ta) return;
+  const val = ta.value.trim();
+  if (!val) return;
+  sendAskResponse(askId, val, btn.closest('.block-content'));
+}
+
+function submitAskChoice(askId, mode, options, allowOpenEnd, openEndIdx) {
+  const selected = document.querySelectorAll('#messages .block-ask:last-of-type .ask-option.selected');
+  if (!selected.length) return;
+
+  const nums = [];
+  let isOpenEnd = false;
+  selected.forEach(s => {
+    const idx = parseInt(s.dataset.idx);
+    if (s.dataset.openEnd === 'true') {
+      isOpenEnd = true;
+    } else {
+      nums.push(idx);
+    }
+  });
+
+  if (isOpenEnd) {
+    const ta = document.getElementById('askOpenEndInput_' + askId);
+    const val = ta ? ta.value.trim() : '';
+    if (val) {
+      sendAskResponse(askId, val, document.querySelector('#messages .block-ask:last-of-type .block-content'));
+      return;
+    }
+  }
+
+  const labels = nums.map(n => options[n - 1]);
+  sendAskResponse(askId, labels.join(', '), document.querySelector('#messages .block-ask:last-of-type .block-content'));
+}
+
+function submitAskExec(askId, approved, cmdline, timeout) {
+  const content = document.querySelector('#messages .block-ask:last-of-type .block-content');
+  if (approved) {
+    sendAskResponse(askId, 'y', content);
+  } else {
+    sendAskResponse(askId, 'n', content);
+  }
+}
+
+async function sendAskResponse(askId, response, contentEl) {
+  if (contentEl) {
+    const inputArea = contentEl.querySelector('.ask-input-row, .ask-options, .ask-exec-actions');
+    if (inputArea) inputArea.style.display = 'none';
+    const answered = document.createElement('div');
+    answered.className = 'ask-answered';
+    answered.innerHTML = 'Answered: <span>' + escapeHtml(response) + '</span>';
+    contentEl.appendChild(answered);
+  }
+  try {
+    await fetch('/api/conversations/' + currentConv + '/ask/' + askId, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({response})
+    });
+  } catch (e) {
+    console.error('Failed to send ask response:', e);
   }
 }
 

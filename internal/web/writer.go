@@ -11,12 +11,13 @@ import (
 )
 
 type Event struct {
-	Type      string `json:"type"`
-	BlockType string `json:"blockType,omitempty"`
-	Agent     string `json:"agent,omitempty"`
-	Level     int    `json:"level,omitempty"`
-	Content   string `json:"content,omitempty"`
-	Duration  string `json:"duration,omitempty"`
+	Type        string       `json:"type"`
+	BlockType   string       `json:"blockType,omitempty"`
+	Agent       string       `json:"agent,omitempty"`
+	Level       int          `json:"level,omitempty"`
+	Content     string       `json:"content,omitempty"`
+	Duration    string       `json:"duration,omitempty"`
+	AskQuestion *AskQuestion `json:"askQuestion,omitempty"`
 }
 
 type DirectWriter struct {
