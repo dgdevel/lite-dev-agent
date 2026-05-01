@@ -435,8 +435,8 @@ function handleStreamDelta(event) {
   currentRawText += event.content;
   if (currentBlockType === 'token_stats') {
     updateTopbarStats(currentRawText);
-  }
-  if (currentBlockType !== 'token_stats') {
+    currentContentEl.textContent = currentRawText;
+  } else {
     const textNode = document.createTextNode(event.content);
     currentContentEl.appendChild(textNode);
   }
