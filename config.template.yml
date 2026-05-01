@@ -36,6 +36,10 @@ agents:
     #   - tool: grep
     #     arguments:
     #       pattern: "%p"
+    # final_tool_calls:
+    #   - tool: memory_put
+    #     arguments:
+    #       fact: "%c"
   - name: project_searcher
     tools: my-mcp
     expose: File system researcher

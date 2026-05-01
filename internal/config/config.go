@@ -68,6 +68,7 @@ type AgentConfig struct {
 	Expose           string            `yaml:"expose"`
 	SystemPrompt     string            `yaml:"system_prompt"`
 	InitialToolCalls []InitialToolCall `yaml:"initial_tool_calls"`
+	FinalToolCalls   []InitialToolCall `yaml:"final_tool_calls"`
 }
 
 type TimeoutConfig struct {

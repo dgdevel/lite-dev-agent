@@ -128,6 +128,7 @@ agents:
 | `expose` | no | If set, this agent is available as a tool to other agents |
 | `system_prompt` | yes | System prompt. Supports `{current_date}` and `{current_time}` variables. |
 | `initial_tool_calls` | no | Tool calls to execute automatically at the start of a new conversation (see below) |
+| `final_tool_calls` | no | Tool calls to execute automatically after the agent's final response (see below) |
 
 ### Initial Tool Calls
 
@@ -153,16 +154,46 @@ Each entry has:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `tool` | yes | Tool name (must be available in the agent's tool groups) |
-| `arguments` | no | Key-value map passed as JSON arguments to the tool. String values support the `%p` wildcard, which is replaced with the user's prompt before the tool is called |
-
-```yaml
-initial_tool_calls:
-  - tool: grep
-    arguments:
-      pattern: "%p"
-```
+| `arguments` | no | Key-value map passed as JSON arguments to the tool. String values support placeholders (see below) |
 
 The tool calls and their results are emitted as `tools_input`/`tools_output` blocks and injected into the message history as if the agent had made those calls. This only runs on the first message of a new conversation (not on resume).
+
+### Final Tool Calls
+
+You can configure an agent to automatically execute tool calls after it produces its final response, before returning control to the user. This is useful for side effects like logging, notifications, or post-processing (e.g., storing the conversation summary).
+
+```yaml
+agents:
+  - name: dev
+    default: true
+    tools: devkit, ask
+    system_prompt: You are a developer assistant.
+    final_tool_calls:
+      - tool: write
+        arguments:
+          path: SUMMARY.md
+          content: "%c"
+```
+
+The configuration format is the same as `initial_tool_calls`. Final tool calls execute after the agent's last LLM response and their results are appended to the message history.
+
+### Tool Call Placeholders
+
+Both `initial_tool_calls` and `final_tool_calls` support these placeholders in string argument values:
+
+| Placeholder | Available in | Description |
+|-------------|-------------|-------------|
+| `%p` | initial, final | Replaced with the user's original prompt |
+| `%c` | final only | Replaced with the formatted conversation log (user requests, agent responses, tool call/response pairs) |
+
+Example:
+```yaml
+final_tool_calls:
+  - tool: write
+    arguments:
+      path: "chat-log.md"
+      content: "%c"
+```
 
 ### Prompt variables
 

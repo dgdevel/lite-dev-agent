@@ -108,7 +108,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 		var wg sync.WaitGroup
 
 		for i, itc := range a.Config.InitialToolCalls {
-			expandedArgs := replacePromptInArgs(itc.Arguments, opts.UserMessage)
+			expandedArgs := replacePlaceholdersInArgs(itc.Arguments, opts.UserMessage, "")
 			argsJSON, _ := json.Marshal(expandedArgs)
 			argsStr := string(argsJSON)
 			callID := fmt.Sprintf("initial_%d", i)
@@ -323,6 +323,74 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 			Content: response,
 		})
 
+		// Execute final tool calls (after LLM response, before returning to user)
+		if len(a.Config.FinalToolCalls) > 0 {
+			conversationLog := formatConversationLog(messages)
+			var finalToolCalls []llm.ToolCall
+			var finalResultMsgs []llm.Message
+
+			type finalCallResult struct {
+				index   int
+				content string
+			}
+			finalResults := make([]finalCallResult, len(a.Config.FinalToolCalls))
+			var wg sync.WaitGroup
+
+			for i, ftc := range a.Config.FinalToolCalls {
+				expandedArgs := replacePlaceholdersInArgs(ftc.Arguments, opts.UserMessage, conversationLog)
+				argsJSON, _ := json.Marshal(expandedArgs)
+				argsStr := string(argsJSON)
+				callID := fmt.Sprintf("final_%d", i)
+
+				tc := llm.ToolCall{
+					ID:   callID,
+					Type: "function",
+					Function: llm.FunctionCall{
+						Name:      ftc.Tool,
+						Arguments: argsStr,
+					},
+				}
+				finalToolCalls = append(finalToolCalls, tc)
+
+				if a.Filter.Enabled(protocol.BlockToolsInput) {
+					protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsInput, FormatToolInput(ftc.Tool, argsStr))
+				}
+
+				wg.Add(1)
+				go func(idx int, toolName, arguments string) {
+					defer wg.Done()
+					result, err := a.Registry.CallTool(ctx, toolName, arguments)
+					if err != nil {
+						result = ToolResult{Content: fmt.Sprintf("tool error: %v", err), IsError: true}
+					}
+					content := result.Content
+					if content == "" {
+						content = "(no output)"
+					}
+					finalResults[idx] = finalCallResult{index: idx, content: content}
+				}(i, ftc.Tool, argsStr)
+			}
+			wg.Wait()
+
+			for i, res := range finalResults {
+				finalResultMsgs = append(finalResultMsgs, llm.Message{
+					Role:       "tool",
+					Content:    res.content,
+					ToolCallID: fmt.Sprintf("final_%d", i),
+				})
+
+				if a.Filter.Enabled(protocol.BlockToolsOutput) {
+					protocol.WriteBlock(a.Writer, a.Config.Name, opts.Level, protocol.BlockToolsOutput, FormatToolOutput(a.Config.FinalToolCalls[i].Tool, res.content))
+				}
+			}
+
+			messages = append(messages, llm.Message{
+				Role:      "assistant",
+				ToolCalls: finalToolCalls,
+			})
+			messages = append(messages, finalResultMsgs...)
+		}
+
 		break
 	}
 
@@ -376,29 +444,53 @@ func (u *TokenUsage) writeChildren(b *strings.Builder, prefix string, ts string)
 	}
 }
 
-func replacePromptInArgs(args map[string]interface{}, prompt string) map[string]interface{} {
+func replacePlaceholdersInArgs(args map[string]interface{}, prompt string, conversation string) map[string]interface{} {
 	result := make(map[string]interface{}, len(args))
 	for k, v := range args {
-		result[k] = replacePromptInValue(v, prompt)
+		result[k] = replacePlaceholdersInValue(v, prompt, conversation)
 	}
 	return result
 }
 
-func replacePromptInValue(v interface{}, prompt string) interface{} {
+func replacePlaceholdersInValue(v interface{}, prompt string, conversation string) interface{} {
 	switch val := v.(type) {
 	case string:
-		return strings.ReplaceAll(val, "%p", prompt)
+		s := strings.ReplaceAll(val, "%p", prompt)
+		s = strings.ReplaceAll(s, "%c", conversation)
+		return s
 	case map[string]interface{}:
-		return replacePromptInArgs(val, prompt)
+		return replacePlaceholdersInArgs(val, prompt, conversation)
 	case []interface{}:
 		result := make([]interface{}, len(val))
 		for i, elem := range val {
-			result[i] = replacePromptInValue(elem, prompt)
+			result[i] = replacePlaceholdersInValue(elem, prompt, conversation)
 		}
 		return result
 	default:
 		return v
 	}
+}
+
+func formatConversationLog(messages []llm.Message) string {
+	var b strings.Builder
+	for _, msg := range messages {
+		switch msg.Role {
+		case "user":
+			fmt.Fprintf(&b, "## User\n%s\n\n", msg.Content)
+		case "assistant":
+			if msg.Content != "" {
+				fmt.Fprintf(&b, "## Agent\n%s\n\n", msg.Content)
+			}
+			if len(msg.ToolCalls) > 0 {
+				for _, tc := range msg.ToolCalls {
+					fmt.Fprintf(&b, "## Tool Call: %s\n%s\n\n", tc.Function.Name, tc.Function.Arguments)
+				}
+			}
+		case "tool":
+			fmt.Fprintf(&b, "## Tool Response\n%s\n\n", msg.Content)
+		}
+	}
+	return b.String()
 }
 
 func interpolatePrompt(prompt string) string {
