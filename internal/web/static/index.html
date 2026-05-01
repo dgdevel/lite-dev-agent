@@ -579,7 +579,8 @@ function handleAskQuestion(event) {
     html += '</div>';
     html += '<div class="ask-input-row" id="askOpenEnd_' + q.id + '" style="display:none">' +
       '<textarea id="askOpenEndInput_' + q.id + '" placeholder="Type your response..." rows="2"></textarea></div>';
-    html += '<button onclick="submitAskChoice(\'' + q.id + '\', \'' + q.mode + '\', ' + JSON.stringify(q.options) + ', ' + q.allowOpenEnd + ', ' + q.options.length + ')" style="margin-top:8px;padding:6px 14px;background:var(--blue);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px">Submit</button>';
+    const safeOptions = JSON.stringify(q.options).replace(/"/g, '&quot;');
+    html += '<button onclick="submitAskChoice(\'' + q.id + '\', \'' + q.mode + '\', JSON.parse(this.dataset.options), ' + q.allowOpenEnd + ', ' + q.options.length + ')" data-options="' + safeOptions + '" style="margin-top:8px;padding:6px 14px;background:var(--blue);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px">Submit</button>';
     content.innerHTML = html;
   } else if (q.type === 'exec') {
     content.innerHTML = '<div class="ask-question-text">Allow command execution?</div>' +
