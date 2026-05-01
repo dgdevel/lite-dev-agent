@@ -436,8 +436,8 @@ function handleStreamDelta(event) {
   if (currentBlockType === 'token_stats') {
     updateTopbarStats(currentRawText);
   }
-  const cursor = currentContentEl.querySelector('.cursor');
-  const textNode = document.createTextNode(event.content);
+  if (currentBlockType !== 'token_stats') {
+    const textNode = document.createTextNode(event.content);
     currentContentEl.appendChild(textNode);
   }
   scrollToBottom();
