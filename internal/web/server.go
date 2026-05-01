@@ -212,6 +212,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	convLog, err := os.OpenFile(convPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[error] failed to open conversation log %s: %v\n", convPath, err)
 		sseSend(w, flusher, Event{Type: "error", Content: "failed to open conversation log"})
 		return
 	}
@@ -243,9 +244,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	go func() {
-		select {
-		case <-done:
-		case <-ctx.Done():
+		agentErr := <-done
+		if agentErr != nil {
+			fmt.Fprintf(os.Stderr, "[error] agent run failed: %v\n", agentErr)
+			eventCh <- Event{Type: "error", Content: agentErr.Error()}
 		}
 		protocol.WriteEndConversation(dw, convPath)
 		convLog.Close()

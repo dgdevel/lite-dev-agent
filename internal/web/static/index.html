@@ -123,6 +123,10 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',He
 .block-token_stats .block-header{background:#0d2137;color:var(--cyan)}
 .block-token_stats .block-content{color:var(--cyan);font-family:monospace;font-size:12px;padding:10px 12px}
 
+.block-error{border-left:3px solid var(--red)}
+.block-error .block-header{background:#3d1214;color:var(--red)}
+.block-error .block-content{color:var(--red);font-family:monospace;font-size:13px}
+
 .cursor{display:inline-block;width:2px;height:14px;background:var(--text);animation:blink 1s step-end infinite;vertical-align:text-bottom;margin-left:1px}
 @keyframes blink{50%{opacity:0}}
 
@@ -297,6 +301,7 @@ function createBlockElement(blockType, agent, level) {
     tools_output: 'Tool Result',
     tools_definition: 'Tools',
     token_stats: 'Token Stats',
+    error: 'Error',
   };
 
   el.innerHTML = '<div class="block-header"><span class="toggle">&#9660;</span><span class="agent-name">' + (labels[blockType] || blockType) + '</span><span class="duration"></span></div><div class="block-content"></div>';
@@ -425,9 +430,8 @@ function handleDone() {
 
 function handleError(event) {
   finalizeBlock();
-  const el = createBlockElement('agent_response', 'Error', 0);
+  const el = createBlockElement('error', 'Error', 0);
   el.querySelector('.block-content').textContent = event.content || 'Unknown error';
-  el.querySelector('.block-content').style.color = 'var(--red)';
   messagesEl.appendChild(el);
   currentBlockEl = null;
   currentContentEl = null;
