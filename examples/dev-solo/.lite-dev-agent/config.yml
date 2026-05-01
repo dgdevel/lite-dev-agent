@@ -25,6 +25,10 @@ agents:
       - tool: ls
         arguments:
           pathspec: .
+    final_tool_calls:
+      - tool: memory_extract
+        arguments:
+          text: "%c"
     system_prompt: >
       You are a software developer.
 
