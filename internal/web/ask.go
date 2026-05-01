@@ -2,7 +2,10 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -293,5 +296,72 @@ func (p *WebAskProvider) handleExec(ctx context.Context, args map[string]any) (a
 		return agent.ToolResult{Content: fmt.Sprintf("error reading response: %v", err), IsError: true}, nil
 	}
 
-	return agent.ToolResult{Content: response}, nil
+	if isAffirmative(response) {
+		return p.runCommand(ctx, cmdline, timeoutSec)
+	}
+
+	type execDenyResponse struct {
+		AltCmd  string `json:"alt_cmd"`
+		Message string `json:"message"`
+	}
+
+	var deny execDenyResponse
+	if err := json.Unmarshal([]byte(response), &deny); err != nil {
+		return agent.ToolResult{Content: "Execution denied"}, nil
+	}
+
+	var parts []string
+
+	if deny.AltCmd != "" {
+		parts = append(parts, "Output from alternative command: "+deny.AltCmd)
+		result, _ := p.runCommand(ctx, deny.AltCmd, timeoutSec)
+		parts = append(parts, result.Content)
+		if result.IsError {
+			return agent.ToolResult{Content: strings.Join(parts, "\n"), IsError: true}, nil
+		}
+	} else {
+		parts = append(parts, "Execution denied")
+	}
+
+	if deny.Message != "" {
+		parts = append(parts, "The user message: "+deny.Message)
+	}
+
+	return agent.ToolResult{Content: strings.Join(parts, "\n")}, nil
+}
+
+func (p *WebAskProvider) runCommand(ctx context.Context, cmdline string, timeoutSec int) (agent.ToolResult, error) {
+	var timeoutDur time.Duration
+	if timeoutSec > 0 {
+		timeoutDur = time.Duration(timeoutSec) * time.Second
+	} else {
+		timeoutDur = 10 * time.Minute
+	}
+
+	execCtx, cancel := context.WithTimeout(ctx, timeoutDur)
+	defer cancel()
+
+	cmd := exec.CommandContext(execCtx, "sh", "-c", cmdline)
+	output, err := cmd.CombinedOutput()
+
+	if execCtx.Err() == context.DeadlineExceeded {
+		return agent.ToolResult{
+			Content: fmt.Sprintf("Command timed out after %d seconds\n%s", timeoutSec, string(output)),
+			IsError: true,
+		}, nil
+	}
+
+	if err != nil {
+		return agent.ToolResult{
+			Content: fmt.Sprintf("Command error: %v\n%s", err, string(output)),
+			IsError: true,
+		}, nil
+	}
+
+	return agent.ToolResult{Content: string(output)}, nil
+}
+
+func isAffirmative(s string) bool {
+	s = strings.TrimSpace(strings.ToLower(s))
+	return s == "y" || s == "yes"
 }

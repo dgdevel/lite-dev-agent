@@ -144,6 +144,12 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',He
 .ask-exec-actions{display:flex;gap:8px}
 .ask-exec-actions .deny-btn{background:transparent;color:var(--red);border:1px solid var(--red)}
 .ask-exec-actions .deny-btn:hover{background:var(--red);color:#fff}
+.ask-deny-form{margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
+.ask-deny-form label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.ask-deny-form input,.ask-deny-form textarea{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px 10px;font-size:13px;font-family:inherit;outline:none;width:100%}
+.ask-deny-form input:focus,.ask-deny-form textarea:focus{border-color:var(--blue)}
+.ask-deny-form textarea{resize:vertical;min-height:48px;max-height:120px}
+.ask-deny-form .ask-deny-submit{align-self:flex-end}
 .ask-answered{color:var(--muted);font-style:italic;font-size:12px;margin-top:8px;padding-top:6px;border-top:1px solid var(--border)}
 .ask-answered span{color:var(--cyan)}
 
@@ -576,8 +582,12 @@ function handleAskQuestion(event) {
     content.innerHTML = '<div class="ask-question-text">Allow command execution?</div>' +
       '<div class="ask-exec-cmdline">' + escapeHtml(q.cmdline) + '</div>' +
       '<div class="ask-exec-actions">' +
-      '<button onclick="submitAskExec(\'' + q.id + '\', true, \'' + escapeHtml(q.cmdline).replace(/'/g, "\\'") + '\', ' + (q.timeout || 0) + ')">Approve</button>' +
-      '<button class="deny-btn" onclick="submitAskExec(\'' + q.id + '\', false, \'\', 0)">Deny</button></div>';
+      '<button onclick="submitAskExec(\'' + q.id + '\', true)">Approve</button>' +
+      '<button class="deny-btn" onclick="showExecDenyForm(\'' + q.id + '\')">Deny</button></div>' +
+      '<div class="ask-deny-form" id="askDeny_' + q.id + '" style="display:none">' +
+      '<div><label>Alternative command</label><input id="askDenyAltCmd_' + q.id + '" placeholder="e.g. ls -la" spellcheck="false"></div>' +
+      '<div><label>Message to the agent</label><textarea id="askDenyMsg_' + q.id + '" placeholder="Explain why this command was denied..." rows="2"></textarea></div>' +
+      '<button class="ask-deny-submit" onclick="submitAskExecDeny(\'' + q.id + '\')">Submit denial</button></div>';
   }
 
   el.appendChild(content);
@@ -634,22 +644,33 @@ function submitAskChoice(askId, mode, options, allowOpenEnd, openEndIdx) {
   sendAskResponse(askId, labels.join(', '), document.querySelector('#messages .block-ask:last-of-type .block-content'));
 }
 
-function submitAskExec(askId, approved, cmdline, timeout) {
-  const content = document.querySelector('#messages .block-ask:last-of-type .block-content');
-  if (approved) {
-    sendAskResponse(askId, 'y', content);
-  } else {
-    sendAskResponse(askId, 'n', content);
-  }
+function showExecDenyForm(askId) {
+  const form = document.getElementById('askDeny_' + askId);
+  if (form) form.style.display = 'flex';
+  const altInput = document.getElementById('askDenyAltCmd_' + askId);
+  if (altInput) altInput.focus();
 }
 
-async function sendAskResponse(askId, response, contentEl) {
+function submitAskExec(askId, approved) {
+  const content = document.querySelector('#messages .block-ask:last-of-type .block-content');
+  sendAskResponse(askId, approved ? 'y' : 'n', content);
+}
+
+function submitAskExecDeny(askId) {
+  const altCmd = (document.getElementById('askDenyAltCmd_' + askId) || {}).value || '';
+  const message = (document.getElementById('askDenyMsg_' + askId) || {}).value || '';
+  const content = document.querySelector('#messages .block-ask:last-of-type .block-content');
+  const response = JSON.stringify({alt_cmd: altCmd.trim(), message: message.trim()});
+  sendAskResponse(askId, response, content, altCmd.trim() || message.trim() || 'Execution denied');
+}
+
+async function sendAskResponse(askId, response, contentEl, displayText) {
   if (contentEl) {
-    const inputArea = contentEl.querySelector('.ask-input-row, .ask-options, .ask-exec-actions');
+    const inputArea = contentEl.querySelector('.ask-input-row, .ask-options, .ask-exec-actions, .ask-deny-form');
     if (inputArea) inputArea.style.display = 'none';
     const answered = document.createElement('div');
     answered.className = 'ask-answered';
-    answered.innerHTML = 'Answered: <span>' + escapeHtml(response) + '</span>';
+    answered.innerHTML = 'Answered: <span>' + escapeHtml(displayText || response) + '</span>';
     contentEl.appendChild(answered);
   }
   try {

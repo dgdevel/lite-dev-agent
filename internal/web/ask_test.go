@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -242,7 +243,7 @@ func TestWebAskProviderExec(t *testing.T) {
 
 	go func() {
 		result, err = p.CallTool(ctx, "ask_exec", `{
-			"cmdline": "echo hello",
+			"cmdline": "echo hello world",
 			"timeout": 5
 		}`)
 		close(done)
@@ -258,7 +259,7 @@ func TestWebAskProviderExec(t *testing.T) {
 	if event.AskQuestion.Type != "exec" {
 		t.Fatalf("expected exec ask type, got %q", event.AskQuestion.Type)
 	}
-	if event.AskQuestion.Cmdline != "echo hello" {
+	if event.AskQuestion.Cmdline != "echo hello world" {
 		t.Fatalf("expected cmdline, got %q", event.AskQuestion.Cmdline)
 	}
 
@@ -275,6 +276,350 @@ func TestWebAskProviderExec(t *testing.T) {
 	}
 	if result.IsError {
 		t.Fatalf("unexpected error: %s", result.Content)
+	}
+	if !strings.Contains(result.Content, "hello world") {
+		t.Errorf("expected 'hello world' in output, got %q", result.Content)
+	}
+}
+
+func TestWebAskProviderExecApprovedYes(t *testing.T) {
+	hub := NewAskHub()
+	ch := make(chan Event, 16)
+	p := NewWebAskProvider("test-agent", hub, ch)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var result agent.ToolResult
+	done := make(chan struct{})
+	go func() {
+		result, _ = p.CallTool(ctx, "ask_exec", `{"cmdline":"echo ok"}`)
+		close(done)
+	}()
+
+	event := <-ch
+	hub.Respond(event.AskQuestion.ID, "yes")
+	<-done
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Content)
+	}
+	if !strings.Contains(result.Content, "ok") {
+		t.Errorf("expected 'ok' in output, got %q", result.Content)
+	}
+}
+
+func TestWebAskProviderExecDeniedNoAltNoMessage(t *testing.T) {
+	hub := NewAskHub()
+	ch := make(chan Event, 16)
+	p := NewWebAskProvider("test-agent", hub, ch)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var result agent.ToolResult
+	done := make(chan struct{})
+	go func() {
+		result, _ = p.CallTool(ctx, "ask_exec", `{"cmdline":"rm -rf /"}`)
+		close(done)
+	}()
+
+	event := <-ch
+	hub.Respond(event.AskQuestion.ID, `{"alt_cmd":"","message":""}`)
+	<-done
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Content)
+	}
+	if result.Content != "Execution denied" {
+		t.Errorf("expected 'Execution denied', got %q", result.Content)
+	}
+}
+
+func TestWebAskProviderExecDeniedWithMessage(t *testing.T) {
+	hub := NewAskHub()
+	ch := make(chan Event, 16)
+	p := NewWebAskProvider("test-agent", hub, ch)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var result agent.ToolResult
+	done := make(chan struct{})
+	go func() {
+		result, _ = p.CallTool(ctx, "ask_exec", `{"cmdline":"rm -rf /"}`)
+		close(done)
+	}()
+
+	event := <-ch
+	hub.Respond(event.AskQuestion.ID, `{"alt_cmd":"","message":"I prefer a safer approach"}`)
+	<-done
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Content)
+	}
+
+	expected := "Execution denied\nThe user message: I prefer a safer approach"
+	if result.Content != expected {
+		t.Errorf("expected %q, got %q", expected, result.Content)
+	}
+}
+
+func TestWebAskProviderExecDeniedWithAltCmd(t *testing.T) {
+	hub := NewAskHub()
+	ch := make(chan Event, 16)
+	p := NewWebAskProvider("test-agent", hub, ch)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var result agent.ToolResult
+	done := make(chan struct{})
+	go func() {
+		result, _ = p.CallTool(ctx, "ask_exec", `{"cmdline":"rm -rf /","timeout":5}`)
+		close(done)
+	}()
+
+	event := <-ch
+	hub.Respond(event.AskQuestion.ID, `{"alt_cmd":"echo safe output","message":""}`)
+	<-done
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Content)
+	}
+	if !strings.HasPrefix(result.Content, "Output from alternative command: echo safe output\n") {
+		t.Errorf("expected alt command prefix, got %q", result.Content)
+	}
+	if !strings.Contains(result.Content, "safe output") {
+		t.Errorf("expected alt command output, got %q", result.Content)
+	}
+}
+
+func TestWebAskProviderExecDeniedWithAltCmdAndMessage(t *testing.T) {
+	hub := NewAskHub()
+	ch := make(chan Event, 16)
+	p := NewWebAskProvider("test-agent", hub, ch)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var result agent.ToolResult
+	done := make(chan struct{})
+	go func() {
+		result, _ = p.CallTool(ctx, "ask_exec", `{"cmdline":"rm -rf /","timeout":5}`)
+		close(done)
+	}()
+
+	event := <-ch
+	hub.Respond(event.AskQuestion.ID, `{"alt_cmd":"echo alt","message":"use this instead"}`)
+	<-done
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Content)
+	}
+	if !strings.HasPrefix(result.Content, "Output from alternative command: echo alt\n") {
+		t.Errorf("expected alt command prefix, got %q", result.Content)
+	}
+	if !strings.Contains(result.Content, "The user message: use this instead") {
+		t.Errorf("expected user message, got %q", result.Content)
+	}
+	if !strings.Contains(result.Content, "alt") {
+		t.Errorf("expected alt output, got %q", result.Content)
+	}
+}
+
+func TestWebAskProviderExecDeniedAltCmdFails(t *testing.T) {
+	hub := NewAskHub()
+	ch := make(chan Event, 16)
+	p := NewWebAskProvider("test-agent", hub, ch)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var result agent.ToolResult
+	done := make(chan struct{})
+	go func() {
+		result, _ = p.CallTool(ctx, "ask_exec", `{"cmdline":"rm -rf /","timeout":5}`)
+		close(done)
+	}()
+
+	event := <-ch
+	hub.Respond(event.AskQuestion.ID, `{"alt_cmd":"false","message":""}`)
+	<-done
+
+	if !result.IsError {
+		t.Error("expected error for failing alt command")
+	}
+	if !strings.HasPrefix(result.Content, "Output from alternative command: false\n") {
+		t.Errorf("expected alt command prefix, got %q", result.Content)
+	}
+}
+
+func TestWebAskProviderExecDeniedPlainString(t *testing.T) {
+	hub := NewAskHub()
+	ch := make(chan Event, 16)
+	p := NewWebAskProvider("test-agent", hub, ch)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var result agent.ToolResult
+	done := make(chan struct{})
+	go func() {
+		result, _ = p.CallTool(ctx, "ask_exec", `{"cmdline":"rm -rf /"}`)
+		close(done)
+	}()
+
+	event := <-ch
+	hub.Respond(event.AskQuestion.ID, "n")
+	<-done
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Content)
+	}
+	if result.Content != "Execution denied" {
+		t.Errorf("expected 'Execution denied', got %q", result.Content)
+	}
+}
+
+func TestWebAskProviderExecCommandError(t *testing.T) {
+	hub := NewAskHub()
+	ch := make(chan Event, 16)
+	p := NewWebAskProvider("test-agent", hub, ch)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var result agent.ToolResult
+	done := make(chan struct{})
+	go func() {
+		result, _ = p.CallTool(ctx, "ask_exec", `{"cmdline":"false","timeout":5}`)
+		close(done)
+	}()
+
+	event := <-ch
+	hub.Respond(event.AskQuestion.ID, "y")
+	<-done
+
+	if !result.IsError {
+		t.Error("expected error for failing command")
+	}
+	if !strings.Contains(result.Content, "Command error:") {
+		t.Errorf("expected command error prefix, got %q", result.Content)
+	}
+}
+
+func TestWebAskProviderExecTimeout(t *testing.T) {
+	hub := NewAskHub()
+	ch := make(chan Event, 16)
+	p := NewWebAskProvider("test-agent", hub, ch)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var result agent.ToolResult
+	done := make(chan struct{})
+	go func() {
+		result, _ = p.CallTool(ctx, "ask_exec", `{"cmdline":"sleep 10","timeout":1}`)
+		close(done)
+	}()
+
+	event := <-ch
+	hub.Respond(event.AskQuestion.ID, "y")
+	<-done
+
+	if !result.IsError {
+		t.Error("expected error for timed out command")
+	}
+	if !strings.Contains(result.Content, "timed out") {
+		t.Errorf("expected timeout message, got %q", result.Content)
+	}
+}
+
+func TestWebAskProviderExecDefaultTimeout(t *testing.T) {
+	hub := NewAskHub()
+	ch := make(chan Event, 16)
+	p := NewWebAskProvider("test-agent", hub, ch)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var result agent.ToolResult
+	done := make(chan struct{})
+	go func() {
+		result, _ = p.CallTool(ctx, "ask_exec", `{"cmdline":"echo fast"}`)
+		close(done)
+	}()
+
+	event := <-ch
+	hub.Respond(event.AskQuestion.ID, "y")
+	<-done
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Content)
+	}
+	if !strings.Contains(result.Content, "fast") {
+		t.Errorf("expected 'fast' in output, got %q", result.Content)
+	}
+}
+
+func TestWebAskProviderExecCapturesStderr(t *testing.T) {
+	hub := NewAskHub()
+	ch := make(chan Event, 16)
+	p := NewWebAskProvider("test-agent", hub, ch)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var result agent.ToolResult
+	done := make(chan struct{})
+	go func() {
+		result, _ = p.CallTool(ctx, "ask_exec", `{"cmdline":"echo stdout_msg; echo stderr_msg >&2","timeout":5}`)
+		close(done)
+	}()
+
+	event := <-ch
+	hub.Respond(event.AskQuestion.ID, "y")
+	<-done
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Content)
+	}
+	if !strings.Contains(result.Content, "stdout_msg") {
+		t.Errorf("expected stdout in output, got %q", result.Content)
+	}
+	if !strings.Contains(result.Content, "stderr_msg") {
+		t.Errorf("expected stderr in output, got %q", result.Content)
+	}
+}
+
+func TestWebAskProviderExecDeniedAltCmdCapturesStderr(t *testing.T) {
+	hub := NewAskHub()
+	ch := make(chan Event, 16)
+	p := NewWebAskProvider("test-agent", hub, ch)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var result agent.ToolResult
+	done := make(chan struct{})
+	go func() {
+		result, _ = p.CallTool(ctx, "ask_exec", `{"cmdline":"rm -rf /","timeout":5}`)
+		close(done)
+	}()
+
+	event := <-ch
+	hub.Respond(event.AskQuestion.ID, `{"alt_cmd":"echo alt_out; echo alt_err >&2","message":""}`)
+	<-done
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Content)
+	}
+	if !strings.Contains(result.Content, "alt_out") {
+		t.Errorf("expected alt stdout in output, got %q", result.Content)
+	}
+	if !strings.Contains(result.Content, "alt_err") {
+		t.Errorf("expected alt stderr in output, got %q", result.Content)
 	}
 }
 
