@@ -219,6 +219,7 @@ let isRunning = false;
 let currentBlockEl = null;
 let currentContentEl = null;
 let currentRawText = '';
+let currentBlockType = '';
 let autoScroll = true;
 
 sidebarToggle.addEventListener('click', () => sidebar.classList.toggle('open'));
@@ -409,6 +410,7 @@ function handleEvent(event) {
 function handleBlockStart(event) {
   finalizeBlock();
   emptyState.style.display = 'none';
+  currentBlockType = event.blockType;
   currentBlockEl = createBlockElement(event.blockType, event.agent, event.level);
   currentRawText = '';
 
@@ -431,11 +433,11 @@ function handleBlockStart(event) {
 function handleStreamDelta(event) {
   if (!currentContentEl) return;
   currentRawText += event.content;
+  if (currentBlockType === 'token_stats') {
+    updateTopbarStats(currentRawText);
+  }
   const cursor = currentContentEl.querySelector('.cursor');
   const textNode = document.createTextNode(event.content);
-  if (cursor) {
-    currentContentEl.insertBefore(textNode, cursor);
-  } else {
     currentContentEl.appendChild(textNode);
   }
   scrollToBottom();
@@ -449,6 +451,7 @@ function handleBlockEnd(event) {
   currentBlockEl = null;
   currentContentEl = null;
   currentRawText = '';
+  currentBlockType = '';
   scrollToBottom();
 }
 
@@ -722,7 +725,6 @@ async function sendMessage(message) {
         if (line.startsWith('data: ')) {
           try {
             const ev = JSON.parse(line.slice(6));
-            if (ev.blockType === 'token_stats') updateTopbarStats(ev.content || '');
             handleEvent(ev);
           } catch(e) {}
         }
@@ -733,7 +735,6 @@ async function sendMessage(message) {
       if (buffer.startsWith('data: ')) {
         try {
           const ev = JSON.parse(buffer.slice(6));
-          if (ev.blockType === 'token_stats') updateTopbarStats(ev.content || '');
           handleEvent(ev);
         } catch(e) {}
       }

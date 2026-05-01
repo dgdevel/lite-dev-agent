@@ -18,7 +18,7 @@ Requires Go 1.26+. Produces the `lite-dev-agent` binary.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--output` | (all) | Comma-separated list of output sections: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `tools_definition`, `thinking`, `token_stats` |
+| `--output` | (all) | Comma-separated list of output sections: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `tools_definition`, `agent_thinking`, `token_stats` |
 | `--resume` | (none) | Path to a conversation log file to resume from |
 | `--color` | true | Colorize output with ANSI escape codes (`true` or `false`) |
 | `--prompt` | (none) | Send a prompt to the default agent and exit immediately (non-interactive mode) |
@@ -215,7 +215,7 @@ blocks:
   agent_thinking:
     color: light_red
   token_stats:
-    color: light_cyan
+    color: light_blue
   waiting_user_input:
     color: cyan
     bold: true
@@ -237,7 +237,7 @@ All block types are optional. Unset blocks use defaults:
 | `tools_output` | `light_green` |
 | `tools_definition` | `yellow` |
 | `agent_thinking` | `light_red` |
-| `token_stats` | `light_cyan` |
+| `token_stats` | `light_blue` |
 | `waiting_user_input` | `cyan` |
 
 Available colors: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `light_black`, `light_red`, `light_green`, `light_yellow`, `light_blue`, `light_magenta`, `light_cyan`, `light_white`.
@@ -310,7 +310,7 @@ manager          prompt: 2500     completion: 180
 #! end_conversation | file: .lite-dev-agent/conversations/2026-04-21_14-30-00.txt
 ```
 
-Block types: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `tools_definition`, `thinking`, `token_stats`.
+Block types: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `tools_definition`, `agent_thinking`, `token_stats`.
 
 Every session is bracketed by a `begin_conversation` line at the start and an `end_conversation` line at the end. When using `--resume`, the opening line uses `resume_conversation` instead:
 
