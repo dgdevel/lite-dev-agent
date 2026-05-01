@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	portFlag := flag.String("port", ":8080", "web server listen address")
+	listenFlag := flag.String("listen", ":8080", "web server listen address in [address]:[port] format")
 	flag.Parse()
 
 	rootPath := "."
@@ -73,7 +73,7 @@ func main() {
 	}
 
 	srv := web.NewServer(cfg, rootPath, llmClients, mcpProviders)
-	if err := srv.Start(*portFlag); err != nil {
+	if err := srv.Start(*listenFlag); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}

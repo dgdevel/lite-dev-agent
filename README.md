@@ -25,11 +25,25 @@ Requires Go 1.26+. Produces the `lite-dev-agent` binary.
 
 `ROOT_PATH` is the target project directory. Defaults to current directory.
 
+## Web Interface
+
+```
+./lite-dev-agent-web [OPTIONS] [ROOT_PATH]
+```
+
+Starts an HTTP server with a browser-based UI for interacting with agents.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--listen` | `:8080` | Listen address in `[address]:[port]` format (e.g. `:8080`, `127.0.0.1:3000`) |
+
+`ROOT_PATH` is the target project directory. Defaults to current directory.
+
+Uses the same configuration as `lite-dev-agent`. Conversations are stored under `ROOT_PATH/.lite-dev-agent/conversations/` and can be resumed from the web UI.
+
 ## Configuration
 
 Configuration is loaded from two locations and merged:
-
-1. **Global config**: `$XDG_CONFIG_HOME/lite-dev-agent/config.yml` (falls back to `~/.config/lite-dev-agent/config.yml` if `XDG_CONFIG_HOME` is unset)
 2. **Local config**: `ROOT_PATH/.lite-dev-agent/config.yml`
 
 If both exist, the local config overrides the global config. Merge rules:
