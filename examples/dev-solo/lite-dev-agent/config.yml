@@ -74,7 +74,7 @@ agents:
 
       For each file:
 
-        1. Fetch relevant portion with `fread`
+        1. Fetch relevant portion with `file_read`
 
         2. Edit using `edit` tool.
 
