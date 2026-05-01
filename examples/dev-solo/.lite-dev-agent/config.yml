@@ -7,7 +7,7 @@ llms:
 mcp:
   - name: devkit
     type: stdio
-    command: "../nixdevkit/nixdevkit-mcp --ignore .* --enable-indexer %s"
+    command: "nixdevkit-mcp --ignore .* --enable-indexer --enable-memory %s"
 
 agents:
 
@@ -17,6 +17,9 @@ agents:
     tools: agents, devkit, ask
     initial_tool_calls:
       - tool: relevant_code
+        arguments:
+          prompt: "%p"
+      - tool: relevant_memory
         arguments:
           prompt: "%p"
       - tool: ls
@@ -49,7 +52,7 @@ agents:
 
       1. Need library/dependency? Follow research workflow (use agent), `ask_exec` to install.
 
-      2. Gather context on project, prepare code edit plan (list of `file_create` and `patch`)
+      2. Gather context on project, prepare code edit plan (list of `file_create` and `edit`)
 
       3. Apply code edit plan, follow Edit workflow
 
@@ -69,9 +72,7 @@ agents:
 
         1. Fetch relevant portion with `fread`
 
-        2. Build patch string; help yourself using `diff_string`.
-
-      Build unified patch and apply with `patch` tool.
+        2. Edit using `edit` tool.
 
 
       # Output
@@ -85,10 +86,11 @@ agents:
 
       # Tools
 
-      If file already exists then edit happens only using `patch`, in unified patch format.
+      If file exists then edit happens only using `edit`.
 
       Prefer `run_command` if available to `ask_exec`.
 
 timeouts:
   llm_request: 30m
   tool_execution: 10m
+
