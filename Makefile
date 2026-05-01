@@ -1,11 +1,6 @@
-.PHONY: build web stdio test lint clean
+.PHONY: build test lint clean
 
-build: web stdio
-
-web:
-	go build -o lite-dev-agent-web ./cmd/web
-
-stdio:
+build:
 	go build -o lite-dev-agent .
 
 test:
@@ -14,4 +9,4 @@ lint:
 	go vet ./...
 
 clean:
-	rm -f lite-dev-agent lite-dev-agent-web lite-dev-agent-test
+	rm -f lite-dev-agent

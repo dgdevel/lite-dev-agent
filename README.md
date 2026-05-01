@@ -1,6 +1,6 @@
 # lite-dev-agent
 
-A Go CLI that orchestrates LLM agents with configurable tool access. Operates entirely over stdin/stdout.
+A web-based LLM agent orchestrator with configurable tool access and a browser UI.
 
 ## Build
 
@@ -16,21 +16,6 @@ Requires Go 1.26+. Produces the `lite-dev-agent` binary.
 ./lite-dev-agent [OPTIONS] [ROOT_PATH]
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--output` | (all) | Comma-separated list of output sections: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `tools_definition`, `agent_thinking`, `token_stats` |
-| `--resume` | (none) | Path to a conversation log file to resume from |
-| `--color` | true | Colorize output with ANSI escape codes (`true` or `false`) |
-| `--prompt` | (none) | Send a prompt to the default agent and exit immediately (non-interactive mode) |
-
-`ROOT_PATH` is the target project directory. Defaults to current directory.
-
-## Web Interface
-
-```
-./lite-dev-agent-web [OPTIONS] [ROOT_PATH]
-```
-
 Starts an HTTP server with a browser-based UI for interacting with agents.
 
 | Option | Default | Description |
@@ -39,7 +24,7 @@ Starts an HTTP server with a browser-based UI for interacting with agents.
 
 `ROOT_PATH` is the target project directory. Defaults to current directory.
 
-Uses the same configuration as `lite-dev-agent`. Conversations are stored under `ROOT_PATH/.lite-dev-agent/conversations/` and can be resumed from the web UI.
+Conversations are stored under `ROOT_PATH/.lite-dev-agent/conversations/` and can be resumed from the web UI.
 
 ## Configuration
 
@@ -208,151 +193,12 @@ timeouts:
 | `llm_request` | 30m | Max wait for a single LLM response |
 | `tool_execution` | 10m | Max time for a single tool call |
 
-### Block colors
-
-Customize the color and boldness of each output block type:
-
-```yaml
-blocks:
-  system_prompt:
-    color: yellow
-  user_message:
-    color: yellow
-  agent_response:
-    color: white
-  tools_input:
-    color: light_green
-  tools_output:
-    color: light_green
-  tools_definition:
-    color: yellow
-  agent_thinking:
-    color: light_red
-  token_stats:
-    color: light_blue
-  waiting_user_input:
-    color: cyan
-    bold: true
-```
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `color` | (see below) | Color name for the block |
-| `bold` | false | Use bold text |
-
-All block types are optional. Unset blocks use defaults:
-
-| Block | Default color |
-|-------|--------------|
-| `system_prompt` | `yellow` |
-| `user_message` | `yellow` |
-| `agent_response` | `white` |
-| `tools_input` | `light_green` |
-| `tools_output` | `light_green` |
-| `tools_definition` | `yellow` |
-| `agent_thinking` | `light_red` |
-| `token_stats` | `light_blue` |
-| `waiting_user_input` | `cyan` |
-
-Available colors: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `light_black`, `light_red`, `light_green`, `light_yellow`, `light_blue`, `light_magenta`, `light_cyan`, `light_white`.
-
 ### Tool groups
-
-| Group | Type | Description |
 |-------|------|-------------|
 | `agents` | built-in | Exposes all agents with an `expose` field as callable tools |
 | `ask` | built-in | Interactive tools: `ask_open_ended`, `ask_multiple_choice`, `ask_exec` |
 | `<mcp name>` | MCP | Any MCP server defined in the `mcp` section |
 
-## I/O Protocol
-
-Input and output use a structured text format over stdin/stdout. Headers and footers are prefixed with `#!` for visibility.
-
-### Input
-
-Type your message after the `waiting_user_input` header. End with a blank line:
-
-```
-#! agent: manager | level: 0 | waiting_user_input
-What does this project do?
-                                       <- blank line ends input
-```
-
-### Output
-
-```
-#! begin_conversation | file: .lite-dev-agent/conversations/2026-04-21_14-30-00.txt
-
-#! agent: manager | level: 0 | system_prompt
-You are the team manager
-
-#! agent: manager | level: 0 | user_message
-What does this project do?
-
-#! agent: manager | level: 0 | tools_input
-Tool name: searcher
-Argument 1 (prompt): What does this project do?
-
-#! agent: searcher | level: 1 | system_prompt
-You search files and the web
-
-#! agent: searcher | level: 1 | user_message
-What does this project do?
-
-#! agent: searcher | level: 1 | agent_response
-This is a Go CLI tool that orchestrates LLM agents.
-
-#! time: 1m32s
-
-#! agent: manager | level: 0 | tools_output
-Tool name: searcher
-Response:
-This is a Go CLI tool that orchestrates LLM agents.
-
-#! time: 1m32s
-
-#! agent: manager | level: 0 | agent_response
-Based on the research, this project is a Go CLI for orchestrating LLM agents.
-
-#! time: 0m45s
-
-#! agent: manager | level: 0 | token_stats
-manager          prompt: 2500     completion: 180
-├── searcher     prompt: 1200     completion: 95
-└── analyst      prompt: 800      completion: 60
-
-#! end_conversation | file: .lite-dev-agent/conversations/2026-04-21_14-30-00.txt
-```
-
-Block types: `system_prompt`, `user_message`, `agent_response`, `tools_input`, `tools_output`, `tools_definition`, `agent_thinking`, `token_stats`.
-
-Every session is bracketed by a `begin_conversation` line at the start and an `end_conversation` line at the end. When using `--resume`, the opening line uses `resume_conversation` instead:
-
-```
-#! resume_conversation | file: .lite-dev-agent/conversations/2026-04-21_14-30-00.txt
-...
-#! end_conversation | file: .lite-dev-agent/conversations/2026-04-21_14-30-00.txt
-```
-
-Use `--output` to filter which blocks are emitted. Example: `--output agent_response` shows only the final responses.
-
-## Non-Interactive Mode
-
-Use `--prompt` to run a single agent round without interactive input:
-
-```
-./lite-dev-agent --prompt "What does this project do?" /path/to/project
-```
-
-When `--prompt` is set:
-
-- The prompt is sent immediately to the default agent
-- The `ask` tool group is disabled (the agent cannot ask interactive questions)
-- The program terminates after the agent completes its response
-- Stdin is not read
-- `waiting_user_input` is never emitted
-
-This is useful for scripting, piping, or one-shot queries where interactive tools are not needed.
 
 ## Token Statistics
 
@@ -371,17 +217,6 @@ Each line shows the agent name, total prompt tokens, and total completion tokens
 This uses the OpenAI-compatible `stream_options: {"include_usage": true}` parameter to retrieve token counts from the server.
 
 ## Conversation Logging
-
-All sessions are logged to `ROOT_PATH/.lite-dev-agent/conversations/YYYY-MM-DD_HH-mm-ss.txt` in the same format as stdout output.
-
-Resume a session with `--resume`:
-
-```
-./lite-dev-agent --resume .lite-dev-agent/conversations/2026-04-18_14-30-00.txt /path/to/project
-```
-
-New output is appended to the same log file. The agent retains full conversation context from the previous session.
-
 When resuming, all previous conversation blocks are replayed to stdout so that downstream consumers (e.g., the GUI) can reconstruct the full conversation history. The `waiting_user_input` blocks are excluded from the replay.
 
 ## Test

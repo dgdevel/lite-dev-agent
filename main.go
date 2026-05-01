@@ -1,45 +1,24 @@
 package main
 
 import (
-	"bufio"
-	"context"
 	"flag"
 	"fmt"
-	"io"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"strings"
-	"syscall"
 
-	"github.com/dgdevel/lite-dev-agent/internal/agent"
 	"github.com/dgdevel/lite-dev-agent/internal/config"
-	"github.com/dgdevel/lite-dev-agent/internal/conversation"
 	"github.com/dgdevel/lite-dev-agent/internal/llm"
-	"github.com/dgdevel/lite-dev-agent/internal/protocol"
 	"github.com/dgdevel/lite-dev-agent/internal/tools"
+	"github.com/dgdevel/lite-dev-agent/internal/web"
 )
 
 func main() {
-	outputFlag := flag.String("output", "", "comma-separated list of output sections to emit")
-	resumeFlag := flag.String("resume", "", "path to conversation log to resume from")
-	colorFlag := flag.String("color", "true", "colorize output with ANSI escape codes (true|false)")
-	promptFlag := flag.String("prompt", "", "send a prompt to the default agent and exit immediately")
+	listenFlag := flag.String("listen", ":8080", "web server listen address in [address]:[port] format")
 	flag.Parse()
 
 	rootPath := "."
 	if args := flag.Args(); len(args) > 0 {
 		rootPath = args[0]
-	}
-
-	resumePath := *resumeFlag
-	if resumePath != "" {
-		resumeAbs, err := filepath.Abs(resumePath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error resolving resume path: %v\n", err)
-			os.Exit(1)
-		}
-		resumePath = resumeAbs
 	}
 
 	abs, err := filepath.Abs(rootPath)
@@ -58,35 +37,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-
-	filter := protocol.NewOutputFilter(*outputFlag)
-
-	var colorWriter *protocol.ColorWriter
-	stdoutWriter := io.Writer(os.Stdout)
-	colorEnabled := *colorFlag == "true"
-	if colorEnabled {
-		blockStyles := protocol.DefaultBlockStyles()
-		for name, override := range cfg.Blocks {
-			bt, ok := protocol.ParseBlockType(name)
-			if !ok {
-				continue
-			}
-			style := blockStyles[bt]
-			if override.Color != "" {
-				if ansi := protocol.ColorNameToANSI(override.Color); ansi != "" {
-					style.ANSI = ansi
-				}
-			}
-			if override.Bold {
-				style.Bold = true
-			}
-			blockStyles[bt] = style
-		}
-		colorWriter = protocol.NewColorWriterWithStyles(os.Stdout, blockStyles)
-		stdoutWriter = colorWriter
-	}
-
-	agentToolProvider := tools.NewAgentToolProvider(cfg, stdoutWriter, filter, &cfg.Timeouts)
 
 	neededMCPs := make(map[string]bool)
 	for _, ac := range cfg.Agents {
@@ -109,59 +59,10 @@ func main() {
 		mcpProviders[mcpName] = mp
 	}
 
-	var convLog *conversation.Log
-	if resumePath != "" {
-		convLog, err = conversation.OpenLog(resumePath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
-	} else {
-		convLog, err = conversation.NewLog(rootPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not create conversation log: %v\n", err)
-		}
-	}
-	if convLog != nil {
-		defer convLog.Close()
-		fmt.Fprintf(os.Stderr, "conversation log: %s\n", convLog.Path())
-	}
-
-	var convFilePath string
-	if convLog != nil {
-		convFilePath = convLog.Path()
-	}
-	isResume := resumePath != ""
-
-	writeConversationBegin := func(w io.Writer) {
-		protocol.WriteBeginConversation(w, convFilePath, isResume)
-	}
-	writeConversationEnd := func(w io.Writer) {
-		protocol.WriteEndConversation(w, convFilePath)
-	}
-
-	writeConversationBegin(stdoutWriter)
-	if convLog != nil {
-		writeConversationBegin(convLog)
-	}
-	defer func() {
-		writeConversationEnd(stdoutWriter)
-		if convLog != nil {
-			writeConversationEnd(convLog)
-		}
-	}()
-
-	stdin := bufio.NewReader(os.Stdin)
-	readInputFn := func() (string, error) {
-		return readInput(stdin)
-	}
-
-	defaultAgentCfg := cfg.DefaultAgent()
-	agents := make(map[string]*agent.Agent)
-
+	llmClients := make(map[string]*llm.Client)
 	for _, ac := range cfg.Agents {
 		llmCfg := ac.ResolveLLM(cfg)
-		client := llm.NewClient(llm.Options{
+		llmClients[ac.Name] = llm.NewClient(llm.Options{
 			APIBase:   llmCfg.APIBase,
 			Model:     llmCfg.Model,
 			APIKey:    llmCfg.APIKey,
@@ -169,188 +70,11 @@ func main() {
 			Timeout:   cfg.Timeouts.LLMRequestDuration(),
 			MaxTokens: llmCfg.MaxTokens,
 		})
-
-		agentRegistry := agent.NewToolRegistry()
-
-		var agentWriter io.Writer = stdoutWriter
-		if convLog != nil {
-			agentWriter = conversation.NewTeeWriter(stdoutWriter, convLog)
-		}
-
-		toolList := ac.ToolList()
-		for _, toolGroup := range toolList {
-			switch toolGroup {
-			case "agents":
-				agentRegistry.Register("agents", agentToolProvider)
-			case "ask":
-				if *promptFlag == "" {
-					agentRegistry.Register("ask", tools.NewAskProvider(ac.Name, agentWriter, readInputFn))
-				}
-			default:
-				if mp, ok := mcpProviders[toolGroup]; ok {
-					agentRegistry.Register(toolGroup, mp)
-				}
-			}
-		}
-
-		a := &agent.Agent{
-			Config:    &ac,
-			LLMConfig: llmCfg,
-			LLM:       client,
-			Registry:  agentRegistry,
-			Writer:    agentWriter,
-			Filter:    filter,
-			Timeouts:  &cfg.Timeouts,
-			IsMain:    ac.Default,
-		}
-
-		agents[ac.Name] = a
-		agentToolProvider.Register(a)
 	}
 
-	mainAgent := agents[defaultAgentCfg.Name]
-	if mainAgent == nil {
-		fmt.Fprintf(os.Stderr, "error: default agent %q not found\n", defaultAgentCfg.Name)
+	srv := web.NewServer(cfg, rootPath, llmClients, mcpProviders)
+	if err := srv.Start(*listenFlag); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-
-	var history []llm.Message
-	if resumePath != "" {
-		blocks, err := conversation.ParseFile(resumePath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error parsing resume file: %v\n", err)
-			os.Exit(1)
-		}
-
-		for _, block := range blocks {
-			if block.Header.BlockType == protocol.BlockWaitingInput {
-				continue
-			}
-			protocol.WriteHeader(stdoutWriter, block.Header.AgentName, block.Header.Level, block.Header.BlockType)
-			if block.Content != "" {
-				fmt.Fprint(stdoutWriter, block.Content)
-				if !strings.HasSuffix(block.Content, "\n") {
-					fmt.Fprintln(stdoutWriter)
-				}
-			}
-			if block.Footer != nil {
-				protocol.WriteFooter(stdoutWriter, block.Footer.Duration)
-			}
-		}
-
-		reconstructed := conversation.ReconstructFromBlocks(blocks, defaultAgentCfg.SystemPrompt)
-		history = reconstructed.Messages
-		fmt.Fprintf(os.Stderr, "resumed session with %d messages\n", len(history))
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		cancel()
-	}()
-
-	if *promptFlag != "" {
-		result, err := mainAgent.Run(ctx, agent.RunOptions{
-			UserMessage: *promptFlag,
-			History:     history,
-		})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
-		if result != nil {
-			history = mainAgent.History
-		}
-		return
-	}
-
-	for {
-		protocol.WriteWaitingInput(stdoutWriter, mainAgent.Config.Name, 0)
-
-		input, err := readInput(stdin)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			fmt.Fprintf(os.Stderr, "error reading input: %v\n", err)
-			continue
-		}
-
-		if input == "" {
-			continue
-		}
-
-		result, err := mainAgent.Run(ctx, agent.RunOptions{
-			UserMessage: input,
-			History:     history,
-		})
-
-		if err != nil {
-			if _, ok := err.(*agent.InterruptionError); ok {
-				break
-			}
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			continue
-		}
-
-		if result != nil {
-			history = mainAgent.History
-		}
-	}
-}
-
-func readInput(r *bufio.Reader) (string, error) {
-	var lines []string
-	blankCount := 0
-
-	for {
-		line, err := r.ReadString('\n')
-		if err != nil {
-			if err == io.EOF && len(lines) > 0 {
-				return joinLines(lines), nil
-			}
-			if err == io.EOF {
-				return "", io.EOF
-			}
-			return "", err
-		}
-
-		trimmed := trimNewline(line)
-
-		if trimmed == "" {
-			blankCount++
-			if blankCount >= 1 && len(lines) > 0 {
-				return joinLines(lines), nil
-			}
-			continue
-		}
-
-		blankCount = 0
-		lines = append(lines, trimmed)
-	}
-}
-
-func joinLines(lines []string) string {
-	result := ""
-	for i, l := range lines {
-		if i > 0 {
-			result += "\n"
-		}
-		result += l
-	}
-	return result
-}
-
-func trimNewline(s string) string {
-	if len(s) > 0 && s[len(s)-1] == '\n' {
-		s = s[:len(s)-1]
-	}
-	if len(s) > 0 && s[len(s)-1] == '\r' {
-		s = s[:len(s)-1]
-	}
-	return s
 }
