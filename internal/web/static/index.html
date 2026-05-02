@@ -307,7 +307,7 @@ async function loadConversation(filename) {
 function renderBlocks(blocks) {
   messagesEl.innerHTML = '';
   emptyState.style.display = 'none';
-  blocks.forEach(b => {
+  for (const b of blocks) {
     const el = createBlockElement(b.type, b.agent, b.level);
     const contentEl = el.querySelector('.block-content');
     contentEl.textContent = b.content || '';
@@ -344,7 +344,7 @@ function renderBlocks(blocks) {
       if (summary) summary.textContent = summaryText;
     }
     messagesEl.appendChild(el);
-  });
+  }
   scrollToBottom();
 }
 
