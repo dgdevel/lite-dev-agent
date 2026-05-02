@@ -295,10 +295,7 @@ function renderBlocks(blocks) {
     if (b.duration) {
       el.querySelector('.duration').textContent = b.duration;
     }
-    if (b.type === 'system_prompt' || b.type === 'tools_definition') {
-      el.classList.add('collapsed');
-    }
-    if (b.type === 'agent_thinking') {
+    if (b.type !== 'agent_response') {
       el.classList.add('collapsed');
     }
     if (b.type === 'tools_input' || b.type === 'tools_output') {
@@ -349,9 +346,6 @@ function finalizeBlock() {
   if (!currentBlockEl || !currentContentEl) return;
   const cursor = currentContentEl.querySelector('.cursor');
   if (cursor) cursor.remove();
-  if (currentBlockEl.classList.contains('block-agent_thinking')) {
-    currentBlockEl.classList.add('collapsed');
-  }
   if (currentBlockEl.classList.contains('block-agent_response') && currentRawText) {
     currentContentEl.dataset.raw = currentRawText;
     currentContentEl.classList.add('md-rendered');
@@ -361,7 +355,6 @@ function finalizeBlock() {
   if (currentBlockEl.classList.contains('block-tools_input') || currentBlockEl.classList.contains('block-tools_output')) {
     const bt = currentBlockEl.classList.contains('block-tools_input') ? 'tools_input' : 'tools_output';
     currentContentEl.innerHTML = prettifyToolContent(currentRawText, bt);
-    currentBlockEl.classList.remove('collapsed');
   }
 }
 
@@ -418,10 +411,7 @@ function handleBlockStart(event) {
   currentBlockEl = createBlockElement(event.blockType, event.agent, event.level);
   currentRawText = '';
 
-  if (event.blockType === 'system_prompt' || event.blockType === 'tools_definition') {
-    currentBlockEl.classList.add('collapsed');
-  }
-  if (event.blockType === 'agent_thinking') {
+  if (event.blockType !== 'agent_response') {
     currentBlockEl.classList.add('collapsed');
   }
 
