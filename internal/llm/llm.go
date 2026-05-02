@@ -322,12 +322,16 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, tools [
 		choice := chatResp.Choices[0]
 		var toolCalls []ToolCall
 		for _, tc := range choice.Message.ToolCalls {
+			args := tc.Function.Arguments
+			if strings.TrimSpace(args) == "" {
+				args = "{}"
+			}
 			toolCalls = append(toolCalls, ToolCall{
 				ID:   tc.ID,
 				Type: tc.Type,
 				Function: FunctionCall{
 					Name:      tc.Function.Name,
-					Arguments: tc.Function.Arguments,
+					Arguments: args,
 				},
 			})
 		}

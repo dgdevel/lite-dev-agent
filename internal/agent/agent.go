@@ -406,12 +406,16 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 func convertDeltasToToolCalls(deltas []llm.ToolCallDelta) []llm.ToolCall {
 	calls := make([]llm.ToolCall, len(deltas))
 	for i, d := range deltas {
+		args := d.Function.Arguments
+		if strings.TrimSpace(args) == "" {
+			args = "{}"
+		}
 		calls[i] = llm.ToolCall{
 			ID:   d.ID,
 			Type: "function",
 			Function: llm.FunctionCall{
 				Name:      d.Function.Name,
-				Arguments: d.Function.Arguments,
+				Arguments: args,
 			},
 		}
 	}
