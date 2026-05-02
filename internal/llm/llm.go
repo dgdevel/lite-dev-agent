@@ -9,10 +9,83 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
+
+// DebugLogger writes timestamped LLM HTTP request/response pairs to a log file.
+type DebugLogger struct {
+	mu   sync.Mutex
+	file *os.File
+}
+
+func NewDebugLogger(path string) (*DebugLogger, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return nil, fmt.Errorf("create llm log dir: %w", err)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("open llm log: %w", err)
+	}
+	return &DebugLogger{file: f}, nil
+}
+
+func (d *DebugLogger) Close() error {
+	if d != nil && d.file != nil {
+		return d.file.Close()
+	}
+	return nil
+}
+
+func (d *DebugLogger) LogRequest(apiBase, model, method, url string, body []byte) {
+	if d == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	ts := time.Now().Format("2006-01-02T15:04:05.000Z07:00")
+	fmt.Fprintf(d.file, "\n%s === REQUEST ===\n", ts)
+	fmt.Fprintf(d.file, "%s api_base: %s\n", ts, apiBase)
+	fmt.Fprintf(d.file, "%s model: %s\n", ts, model)
+	fmt.Fprintf(d.file, "%s %s %s\n", ts, method, url)
+	if len(body) > 0 {
+		var pretty bytes.Buffer
+		if json.Indent(&pretty, body, "", "  ") == nil {
+			fmt.Fprintf(d.file, "%s %s\n", ts, pretty.String())
+		} else {
+			fmt.Fprintf(d.file, "%s %s\n", ts, string(body))
+		}
+	}
+}
+
+func (d *DebugLogger) LogResponse(apiBase, model string, statusCode int, body []byte) {
+	if d == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	ts := time.Now().Format("2006-01-02T15:04:05.000Z07:00")
+	fmt.Fprintf(d.file, "%s === RESPONSE ===\n", ts)
+	fmt.Fprintf(d.file, "%s api_base: %s\n", ts, apiBase)
+	fmt.Fprintf(d.file, "%s model: %s\n", ts, model)
+	fmt.Fprintf(d.file, "%s status: %d\n", ts, statusCode)
+	if len(body) > 0 {
+		var pretty bytes.Buffer
+		if json.Indent(&pretty, body, "", "  ") == nil {
+			fmt.Fprintf(d.file, "%s %s\n", ts, pretty.String())
+		} else {
+			// For streaming or non-JSON, just write as-is (truncated if huge)
+			s := string(body)
+			if len(s) > 4096 {
+				s = s[:4096] + "\n... (truncated)"
+			}
+			fmt.Fprintf(d.file, "%s %s\n", ts, s)
+		}
+	}
+}
 
 type Message struct {
 	Role         string        `json:"role"`
@@ -85,15 +158,17 @@ type Client struct {
 	httpClient *http.Client
 	timeout    time.Duration
 	maxTokens  int
+	debug      *DebugLogger
 }
 
 type Options struct {
-	APIBase   string
-	Model     string
-	APIKey    string
-	Headers   map[string]string
-	Timeout   time.Duration
-	MaxTokens int
+	APIBase     string
+	Model       string
+	APIKey      string
+	Headers     map[string]string
+	Timeout     time.Duration
+	MaxTokens   int
+	DebugLogger *DebugLogger
 }
 
 func NewClient(opts Options) *Client {
@@ -107,6 +182,7 @@ func NewClient(opts Options) *Client {
 		},
 		timeout:   opts.Timeout,
 		maxTokens: opts.MaxTokens,
+		debug:     opts.DebugLogger,
 	}
 }
 
@@ -258,6 +334,8 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, tools [
 		req.Header.Set("Content-Type", "application/json")
 		c.setAuth(req)
 
+		c.debug.LogRequest(c.apiBase, c.model, http.MethodPost, c.apiBase+"/chat/completions", data)
+
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			if attempt < maxRetries {
@@ -274,6 +352,7 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, tools [
 		if isRetryableHTTPStatus(resp.StatusCode) {
 			respData, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
+			c.debug.LogResponse(c.apiBase, c.model, resp.StatusCode, respData)
 			if attempt < maxRetries {
 				backoff := getBackoff(attempt, resp)
 				fmt.Fprintf(os.Stderr, "LLM error (HTTP %d), retrying in %v (attempt %d/%d): %s\n", resp.StatusCode, backoff, attempt+1, maxRetries, string(respData))
@@ -288,6 +367,7 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, tools [
 
 		respData, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		c.debug.LogResponse(c.apiBase, c.model, resp.StatusCode, respData)
 		if err != nil {
 			if attempt < maxRetries {
 				fmt.Fprintf(os.Stderr, "LLM read error: %v, retrying (attempt %d/%d)\n", err, attempt+1, maxRetries)
@@ -365,6 +445,8 @@ func (c *Client) ChatCompletionStream(ctx context.Context, messages []Message, t
 		req.Header.Set("Content-Type", "application/json")
 		c.setAuth(req)
 
+		c.debug.LogRequest(c.apiBase, c.model, http.MethodPost, c.apiBase+"/chat/completions", data)
+
 		resp, err = c.httpClient.Do(req)
 		if err != nil {
 			if attempt < maxRetries {
@@ -381,6 +463,7 @@ func (c *Client) ChatCompletionStream(ctx context.Context, messages []Message, t
 		if isRetryableHTTPStatus(resp.StatusCode) {
 			respBody, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
+			c.debug.LogResponse(c.apiBase, c.model, resp.StatusCode, respBody)
 			if attempt < maxRetries {
 				backoff := getBackoff(attempt, resp)
 				fmt.Fprintf(os.Stderr, "LLM error (HTTP %d), retrying in %v (attempt %d/%d): %s\n", resp.StatusCode, backoff, attempt+1, maxRetries, string(respBody))
@@ -396,8 +479,11 @@ func (c *Client) ChatCompletionStream(ctx context.Context, messages []Message, t
 	}
 	defer resp.Body.Close()
 
+	c.debug.LogResponse(c.apiBase, c.model, resp.StatusCode, []byte("(streaming response)"))
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		c.debug.LogResponse(c.apiBase, c.model, resp.StatusCode, body)
 		return fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
 	}
 

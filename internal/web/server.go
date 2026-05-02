@@ -1,6 +1,8 @@
 package web
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,7 +10,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -68,8 +72,10 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	dirName := filepath.Base(s.rootPath)
+	page := bytes.ReplaceAll(indexHTML, []byte("{{CWD_NAME}}"), []byte(dirName))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(indexHTML)
+	w.Write(page)
 }
 
 func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request) {
@@ -83,6 +89,7 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		Filename string `json:"filename"`
 		Modified string `json:"modified"`
 		Size     int64  `json:"size"`
+		Stats    string `json:"stats,omitempty"`
 	}
 
 	var convs []convInfo
@@ -94,10 +101,12 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		if err != nil {
 			continue
 		}
+		stats := extractLastTokenStats(filepath.Join(s.conversationsDir, e.Name()))
 		convs = append(convs, convInfo{
 			Filename: e.Name(),
 			Modified: info.ModTime().Format(time.RFC3339),
 			Size:     info.Size(),
+			Stats:    stats,
 		})
 	}
 
@@ -368,4 +377,73 @@ func ensureFile(path string) {
 	if err == nil {
 		f.Close()
 	}
+}
+
+var tokenStatsRe = regexp.MustCompile(`prompt:\s*(\d+)\s+completion:\s*(\d+)`)
+
+func extractLastTokenStats(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	// Scan file for token_stats block headers and collect their content
+	var lastContent string
+	var inTokenStats bool
+	scanner := newScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		// Header lines: #!timestamp agent: name | level: N | token_stats
+		if strings.HasPrefix(line, "#!") && strings.Contains(line, "| token_stats") {
+			inTokenStats = true
+			lastContent = ""
+			continue
+		}
+		if !inTokenStats {
+			continue
+		}
+		// Footer line: #!timestamp time: ...
+		if strings.HasPrefix(line, "#!") {
+			inTokenStats = false
+			continue
+		}
+		lastContent += line + "\n"
+	}
+
+	if lastContent == "" {
+		return ""
+	}
+
+	// Aggregate all prompt/completion from the content
+	var totalPrompt, totalCompletion int64
+	matches := tokenStatsRe.FindAllStringSubmatch(lastContent, -1)
+	for _, m := range matches {
+		p, _ := strconv.ParseInt(m[1], 10, 64)
+		c, _ := strconv.ParseInt(m[2], 10, 64)
+		totalPrompt += p
+		totalCompletion += c
+	}
+	if totalPrompt == 0 && totalCompletion == 0 {
+		return ""
+	}
+
+	total := totalPrompt + totalCompletion
+	fmtP := formatTokenCount(totalPrompt)
+	fmtC := formatTokenCount(totalCompletion)
+	fmtT := formatTokenCount(total)
+	return "▸ in " + fmtP + "  ▸ out " + fmtC + "  total " + fmtT
+}
+
+func newScanner(r io.Reader) *bufio.Scanner {
+	s := bufio.NewScanner(r)
+	s.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	return s
+}
+
+func formatTokenCount(n int64) string {
+	if n >= 1000 {
+		return fmt.Sprintf("%.1fK", float64(n)/1000)
+	}
+	return fmt.Sprintf("%d", n)
 }

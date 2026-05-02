@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Lite Dev Agent</title>
+<title>{{CWD_NAME}} - Lite Dev Agent</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -27,6 +27,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',He
 .conv-item:hover{background:var(--surface2);color:var(--text)}
 .conv-item.active{background:var(--surface2);color:var(--text)}
 .conv-item .conv-date{font-size:11px;color:var(--dim);display:block;margin-top:2px}
+.conv-item .conv-stats{font-size:10px;font-family:monospace;color:var(--cyan);display:block;margin-top:2px}
 
 .main{flex:1;display:flex;flex-direction:column;min-width:0}
 .topbar{padding:10px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--surface);flex-wrap:wrap}
@@ -68,7 +69,9 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',He
 
 .block{margin-bottom:16px;border-radius:var(--radius);overflow:hidden}
 .block-header{display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:12px;font-weight:500;cursor:pointer;user-select:none}
-.block-header .agent-name{flex:1}
+.block-header .agent-name{flex-shrink:0}
+.block-header .tool-summary,.block-header .token-summary{flex:1;color:var(--muted);font-weight:400;font-family:monospace;font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0}
+.block-header .token-summary{color:var(--cyan)}
 .block-header .duration{color:var(--dim);font-size:11px;font-family:monospace}
 .block-header .toggle{color:var(--dim);font-size:10px;transition:transform .15s}
 .block.collapsed .toggle{transform:rotate(-90deg)}
@@ -117,11 +120,22 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',He
 
 .block-tools_definition{border-left:3px solid var(--yellow)}
 .block-tools_definition .block-header{background:var(--yellow-dim);color:var(--yellow)}
-.block-tools_definition .block-content{color:var(--muted);font-family:monospace;font-size:12px}
+.block-tools_definition .block-content{color:var(--muted);font-size:12px}
+
+.tools-def-list{display:flex;flex-direction:column;gap:8px}
+.tools-def-item{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 12px}
+.tools-def-name{font-weight:600;color:var(--text);font-family:monospace;font-size:12px}
+.tools-def-desc{color:var(--muted);font-size:11px;margin-top:2px}
+.tools-def-params{margin-top:6px;display:flex;flex-direction:column;gap:2px}
+.tools-def-param{display:flex;gap:6px;align-items:baseline;font-size:11px}
+.tools-def-param-name{color:var(--cyan);font-family:monospace}
+.tools-def-required{color:var(--red);font-size:9px;margin-left:1px}
+.tools-def-param-type{color:var(--dim);font-family:monospace;font-size:10px}
+.tools-def-param-desc{color:var(--muted);font-size:11px}
 
 .block-token_stats{border-left:3px solid var(--cyan)}
 .block-token_stats .block-header{background:#0d2137;color:var(--cyan)}
-.block-token_stats .block-content{color:var(--cyan);font-family:monospace;font-size:12px;padding:10px 12px}
+.block-token_stats .block-content{display:none}
 
 .block-error{border-left:3px solid var(--red)}
 .block-error .block-header{background:#3d1214;color:var(--red)}
@@ -180,7 +194,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',He
 <div class="app">
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
-      <h1>Lite Dev Agent</h1>
+      <h1>{{CWD_NAME}}</h1>
       <button class="new-chat-btn" id="newChatBtn">+ New Chat</button>
     </div>
     <div class="conv-list" id="convList"></div>
@@ -198,8 +212,8 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',He
       <div class="empty-state" id="emptyState">Select a conversation or start a new chat</div>
     </div>
     <div class="input-area">
-      <textarea id="msgInput" placeholder="Type your message... (Enter to send, Shift+Enter for new line)" rows="1" disabled></textarea>
-      <button class="send-btn" id="sendBtn" disabled>Send</button>
+      <textarea id="msgInput" placeholder="Type your message... (Enter to send, Shift+Enter for new line)" rows="1"></textarea>
+      <button class="send-btn" id="sendBtn">Send</button>
     </div>
   </div>
 </div>
@@ -260,7 +274,12 @@ function renderConvList(convs) {
   convs.forEach(c => {
     const el = document.createElement('div');
     el.className = 'conv-item' + (c.filename === currentConv ? ' active' : '');
-    el.innerHTML = '<span>' + formatConvTime(c.modified) + ' <span style="color:var(--dim);margin-left:4px">' + formatSize(c.size) + '</span></span><span class="conv-date">' + c.filename + '</span>';
+    let inner = '<span>' + formatConvTime(c.modified) + ' <span style="color:var(--dim);margin-left:4px">' + formatSize(c.size) + '</span></span>';
+    if (c.stats) {
+      inner += '<span class="conv-stats">' + escapeHtml(c.stats) + '</span>';
+    }
+    inner += '<span class="conv-date">' + c.filename + '</span>';
+    el.innerHTML = inner;
     el.addEventListener('click', () => loadConversation(c.filename));
     convList.appendChild(el);
   });
@@ -298,8 +317,16 @@ function renderBlocks(blocks) {
     if (b.type !== 'agent_response') {
       el.classList.add('collapsed');
     }
-    if (b.type === 'tools_input' || b.type === 'tools_output') {
+    if (b.type === 'tools_input') {
       contentEl.innerHTML = prettifyToolContent(b.content || '', b.type);
+      const summary = el.querySelector('.tool-summary');
+      if (summary) summary.textContent = extractToolSummary(b.content || '');
+    } else if (b.type === 'tools_output') {
+      contentEl.innerHTML = prettifyToolContent(b.content || '', b.type);
+      const summary = el.querySelector('.tool-summary');
+      if (summary) summary.textContent = extractToolResultSummary(b.content || '');
+    } else if (b.type === 'tools_definition') {
+      contentEl.innerHTML = prettifyToolsDefinition(b.content || '');
     }
     if (b.type === 'agent_response') {
       contentEl.dataset.raw = b.content || '';
@@ -309,6 +336,8 @@ function renderBlocks(blocks) {
     }
     if (b.type === 'token_stats') {
       updateTopbarStats(b.content || '');
+      const summary = el.querySelector('.tool-summary');
+      if (summary) summary.textContent = extractTokenStatsSummary(b.content || '');
     }
     messagesEl.appendChild(el);
   });
@@ -332,7 +361,9 @@ function createBlockElement(blockType, agent, level) {
     error: 'Error',
   };
 
-  el.innerHTML = '<div class="block-header"><span class="toggle">&#9660;</span><span class="agent-name">' + (labels[blockType] || blockType) + '</span><span class="duration"></span></div><div class="block-content"></div>';
+  const needsSummary = blockType === 'tools_input' || blockType === 'tools_output' || blockType === 'token_stats';
+  const summarySpan = needsSummary ? '<span class="tool-summary"></span>' : '';
+  el.innerHTML = '<div class="block-header"><span class="toggle">&#9660;</span><span class="agent-name">' + (labels[blockType] || blockType) + '</span>' + summarySpan + '<span class="duration"></span></div><div class="block-content"></div>';
 
   el.querySelector('.block-header').addEventListener('click', (e) => {
     if (e.target.classList.contains('md-toggle') || e.target.classList.contains('tool-box-raw-toggle')) return;
@@ -352,9 +383,18 @@ function finalizeBlock() {
     currentContentEl.innerHTML = renderMarkdown(currentRawText);
     addMdToggle(currentBlockEl, currentContentEl);
   }
-  if (currentBlockEl.classList.contains('block-tools_input') || currentBlockEl.classList.contains('block-tools_output')) {
-    const bt = currentBlockEl.classList.contains('block-tools_input') ? 'tools_input' : 'tools_output';
-    currentContentEl.innerHTML = prettifyToolContent(currentRawText, bt);
+  if (currentBlockEl.classList.contains('block-tools_input')) {
+    currentContentEl.innerHTML = prettifyToolContent(currentRawText, 'tools_input');
+    const summary = currentBlockEl.querySelector('.tool-summary');
+    if (summary) summary.textContent = extractToolSummary(currentRawText);
+  } else if (currentBlockEl.classList.contains('block-tools_output')) {
+    currentContentEl.innerHTML = prettifyToolContent(currentRawText, 'tools_output');
+    const summary = currentBlockEl.querySelector('.tool-summary');
+    if (summary) summary.textContent = extractToolResultSummary(currentRawText);
+  }
+  if (currentBlockEl.classList.contains('block-token_stats')) {
+    const summary = currentBlockEl.querySelector('.tool-summary');
+    if (summary) summary.textContent = extractTokenStatsSummary(currentRawText);
   }
 }
 
@@ -478,6 +518,94 @@ function updateTopbarStats(content) {
   const total = totalPrompt + totalCompletion;
   tokenStatsEl.innerHTML = '<span class="token-stat in">&#9656; in ' + fmt(totalPrompt) + '</span><span class="token-stat out">&#9656; out ' + fmt(totalCompletion) + '</span><span class="token-stat total">total ' + fmt(total) + '</span>';
   tokenStatsEl.classList.add('visible');
+}
+
+function extractToolSummary(content) {
+  const lines = content.split('\n');
+  let toolName = '';
+  const argNames = [];
+  for (const line of lines) {
+    if (line.startsWith('Tool name: ')) {
+      toolName = line.replace('Tool name: ', '');
+    } else if (line.match(/^Argument \d+ \(/)) {
+      const m = line.match(/^Argument \d+ \((.+?)\):/);
+      if (m) argNames.push(m[1]);
+    }
+  }
+  if (!toolName && argNames.length === 0) return '';
+  const truncArg = s => s.length > 30 ? s.substring(0, 30) + '…' : s;
+  const argPart = argNames.map(truncArg).join(', ');
+  return toolName + (argPart ? ' | ' + argPart : '');
+}
+
+function extractToolResultSummary(content) {
+  const lines = content.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('Tool name:') || trimmed.startsWith('Response:')) continue;
+    return trimmed.length > 80 ? trimmed.substring(0, 80) + '…' : trimmed;
+  }
+  return '';
+}
+
+function extractTokenStatsSummary(content) {
+  const regex = /prompt:\s*(\d+)\s+completion:\s*(\d+)/g;
+  let totalPrompt = 0, totalCompletion = 0, match;
+  while ((match = regex.exec(content)) !== null) {
+    totalPrompt += parseInt(match[1]);
+    totalCompletion += parseInt(match[2]);
+  }
+  if (totalPrompt === 0 && totalCompletion === 0) return '';
+  const fmt = n => n >= 1000 ? (n/1000).toFixed(1) + 'K' : n;
+  return '▸ in ' + fmt(totalPrompt) + '  ▸ out ' + fmt(totalCompletion) + '  total ' + fmt(totalPrompt + totalCompletion);
+}
+
+function prettifyToolsDefinition(content) {
+  const tools = content.split(/\n\n+/);
+  let html = '<div class="tools-def-list">';
+  for (const toolBlock of tools) {
+    const lines = toolBlock.split('\n');
+    const nameDesc = lines[0] || '';
+    const colonIdx = nameDesc.indexOf(': ');
+    let name = '', desc = '';
+    if (colonIdx >= 0) {
+      name = nameDesc.substring(0, colonIdx);
+      desc = nameDesc.substring(colonIdx + 2);
+    } else {
+      name = nameDesc;
+    }
+    let paramsHtml = '';
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i].startsWith('Parameters: ')) {
+        try {
+          const params = JSON.parse(lines[i].substring('Parameters: '.length));
+          const props = params.properties || {};
+          const required = params.required || [];
+          const keys = Object.keys(props);
+          if (keys.length > 0) {
+            paramsHtml = '<div class="tools-def-params">';
+            for (const k of keys) {
+              const p = props[k];
+              const isReq = required.includes(k);
+              const type = p.type || 'any';
+              const pDesc = p.description ? ' — ' + p.description : '';
+              paramsHtml += '<div class="tools-def-param"><span class="tools-def-param-name">' + escapeHtml(k) +
+                (isReq ? '<span class="tools-def-required">*</span>' : '') +
+                '</span><span class="tools-def-param-type">' + escapeHtml(type) +
+                '</span>' + (pDesc ? '<span class="tools-def-param-desc">' + escapeHtml(pDesc) + '</span>' : '') + '</div>';
+            }
+            paramsHtml += '</div>';
+          }
+        } catch(e) {
+          paramsHtml = '<div class="tools-def-params"><span class="tools-def-param-desc">' + escapeHtml(lines[i]) + '</span></div>';
+        }
+      }
+    }
+    html += '<div class="tools-def-item"><div class="tools-def-name">' + escapeHtml(name) + '</div>' +
+      '<div class="tools-def-desc">' + escapeHtml(desc) + '</div>' + paramsHtml + '</div>';
+  }
+  html += '</div>';
+  return html;
 }
 
 function prettifyToolContent(content, blockType) {
@@ -757,9 +885,24 @@ function scrollToBottom() {
   });
 }
 
-sendBtn.addEventListener('click', () => {
+sendBtn.addEventListener('click', async () => {
   const msg = msgInput.value.trim();
-  if (msg) {
+  if (!msg) return;
+  if (!currentConv) {
+    msgInput.value = '';
+    autoResize();
+    const res = await api('POST', '/conversations');
+    const data = await res.json();
+    currentConv = data.filename;
+    messagesEl.innerHTML = '';
+    emptyState.style.display = 'none';
+    topbarTitle.textContent = data.filename.replace('.txt','').replace(/_/g,' ');
+    tokenStatsEl.classList.remove('visible');
+    tokenStatsEl.textContent = '';
+    refreshConvList();
+    sidebar.classList.remove('open');
+    sendMessage(msg);
+  } else if (msg) {
     sendMessage(msg);
     msgInput.value = '';
     autoResize();
