@@ -388,16 +388,23 @@ func extractLastTokenStats(path string) string {
 	}
 	defer f.Close()
 
-	// Scan file for token_stats block headers and collect their content
-	var lastContent string
+	// Scan file for token_stats blocks, collect all non-zero entries, return last valid
+	var allStats []string
+	var currentContent string
 	var inTokenStats bool
 	scanner := newScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
 		// Header lines: #!timestamp agent: name | level: N | token_stats
 		if strings.HasPrefix(line, "#!") && strings.Contains(line, "| token_stats") {
+			// Finish previous block if any
+			if inTokenStats && currentContent != "" {
+				if sum, ok := summarizeTokenContent(currentContent); ok {
+					allStats = append(allStats, sum)
+				}
+			}
 			inTokenStats = true
-			lastContent = ""
+			currentContent = ""
 			continue
 		}
 		if !inTokenStats {
@@ -405,19 +412,33 @@ func extractLastTokenStats(path string) string {
 		}
 		// Footer line: #!timestamp time: ...
 		if strings.HasPrefix(line, "#!") {
+			if currentContent != "" {
+				if sum, ok := summarizeTokenContent(currentContent); ok {
+					allStats = append(allStats, sum)
+				}
+			}
 			inTokenStats = false
+			currentContent = ""
 			continue
 		}
-		lastContent += line + "\n"
+		currentContent += line + "\n"
+	}
+	// Handle last block if file ends without a footer
+	if inTokenStats && currentContent != "" {
+		if sum, ok := summarizeTokenContent(currentContent); ok {
+			allStats = append(allStats, sum)
+		}
 	}
 
-	if lastContent == "" {
+	if len(allStats) == 0 {
 		return ""
 	}
+	return allStats[len(allStats)-1]
+}
 
-	// Aggregate all prompt/completion from the content
+func summarizeTokenContent(content string) (string, bool) {
 	var totalPrompt, totalCompletion int64
-	matches := tokenStatsRe.FindAllStringSubmatch(lastContent, -1)
+	matches := tokenStatsRe.FindAllStringSubmatch(content, -1)
 	for _, m := range matches {
 		p, _ := strconv.ParseInt(m[1], 10, 64)
 		c, _ := strconv.ParseInt(m[2], 10, 64)
@@ -425,14 +446,13 @@ func extractLastTokenStats(path string) string {
 		totalCompletion += c
 	}
 	if totalPrompt == 0 && totalCompletion == 0 {
-		return ""
+		return "", false
 	}
-
 	total := totalPrompt + totalCompletion
 	fmtP := formatTokenCount(totalPrompt)
 	fmtC := formatTokenCount(totalCompletion)
 	fmtT := formatTokenCount(total)
-	return "▸ in " + fmtP + "  ▸ out " + fmtC + "  total " + fmtT
+	return "▸ in " + fmtP + "  ▸ out " + fmtC + "  total " + fmtT, true
 }
 
 func newScanner(r io.Reader) *bufio.Scanner {

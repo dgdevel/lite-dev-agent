@@ -335,9 +335,13 @@ function renderBlocks(blocks) {
       addMdToggle(el, contentEl);
     }
     if (b.type === 'token_stats') {
+      const summaryText = extractTokenStatsSummary(b.content || '');
+      if (!summaryText) {
+        continue; // skip empty token stats blocks
+      }
       updateTopbarStats(b.content || '');
       const summary = el.querySelector('.tool-summary');
-      if (summary) summary.textContent = extractTokenStatsSummary(b.content || '');
+      if (summary) summary.textContent = summaryText;
     }
     messagesEl.appendChild(el);
   });
@@ -393,8 +397,13 @@ function finalizeBlock() {
     if (summary) summary.textContent = extractToolResultSummary(currentRawText);
   }
   if (currentBlockEl.classList.contains('block-token_stats')) {
+    const summaryText = extractTokenStatsSummary(currentRawText);
+    if (!summaryText) {
+      currentBlockEl.remove();
+      return;
+    }
     const summary = currentBlockEl.querySelector('.tool-summary');
-    if (summary) summary.textContent = extractTokenStatsSummary(currentRawText);
+    if (summary) summary.textContent = summaryText;
   }
 }
 
@@ -523,26 +532,30 @@ function updateTopbarStats(content) {
 function extractToolSummary(content) {
   const lines = content.split('\n');
   let toolName = '';
-  const argNames = [];
+  const args = [];
   for (const line of lines) {
+    if (line === 'Response:') break;
     if (line.startsWith('Tool name: ')) {
       toolName = line.replace('Tool name: ', '');
     } else if (line.match(/^Argument \d+ \(/)) {
-      const m = line.match(/^Argument \d+ \((.+?)\):/);
-      if (m) argNames.push(m[1]);
+      const m = line.match(/^Argument \d+ \((.+?)\): (.*)$/);
+      if (m) args.push({key: m[1], val: m[2] || ''});
     }
   }
-  if (!toolName && argNames.length === 0) return '';
-  const truncArg = s => s.length > 30 ? s.substring(0, 30) + '…' : s;
-  const argPart = argNames.map(truncArg).join(', ');
+  if (!toolName && args.length === 0) return '';
+  const trunc = s => s.length > 30 ? s.substring(0, 30) + '…' : s;
+  const argPart = args.map(a => trunc(a.key + ': ' + a.val)).join(', ');
   return toolName + (argPart ? ' | ' + argPart : '');
 }
 
 function extractToolResultSummary(content) {
   const lines = content.split('\n');
+  let inResponse = false;
   for (const line of lines) {
+    if (line === 'Response:') { inResponse = true; continue; }
+    if (!inResponse) continue;
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('Tool name:') || trimmed.startsWith('Response:')) continue;
+    if (!trimmed) continue;
     return trimmed.length > 80 ? trimmed.substring(0, 80) + '…' : trimmed;
   }
   return '';
@@ -561,48 +574,51 @@ function extractTokenStatsSummary(content) {
 }
 
 function prettifyToolsDefinition(content) {
-  const tools = content.split(/\n\n+/);
-  let html = '<div class="tools-def-list">';
-  for (const toolBlock of tools) {
-    const lines = toolBlock.split('\n');
-    const nameDesc = lines[0] || '';
-    const colonIdx = nameDesc.indexOf(': ');
-    let name = '', desc = '';
-    if (colonIdx >= 0) {
-      name = nameDesc.substring(0, colonIdx);
-      desc = nameDesc.substring(colonIdx + 2);
-    } else {
-      name = nameDesc;
+  // Parse tools sequentially: each tool = name:desc line, optionally followed by Parameters: line
+  const toolBlocks = [];
+  const lines = content.split('\n');
+  let current = null;
+  for (const line of lines) {
+    if (line.startsWith('Parameters: ')) {
+      if (current) current.paramsLine = line.substring('Parameters: '.length);
+    } else if (line.includes(': ')) {
+      // New tool definition
+      if (current) toolBlocks.push(current);
+      const colonIdx = line.indexOf(': ');
+      current = { name: line.substring(0, colonIdx), desc: line.substring(colonIdx + 2), paramsLine: null };
     }
+  }
+  if (current) toolBlocks.push(current);
+
+  let html = '<div class="tools-def-list">';
+  for (const tool of toolBlocks) {
     let paramsHtml = '';
-    for (let i = 1; i < lines.length; i++) {
-      if (lines[i].startsWith('Parameters: ')) {
-        try {
-          const params = JSON.parse(lines[i].substring('Parameters: '.length));
-          const props = params.properties || {};
-          const required = params.required || [];
-          const keys = Object.keys(props);
-          if (keys.length > 0) {
-            paramsHtml = '<div class="tools-def-params">';
-            for (const k of keys) {
-              const p = props[k];
-              const isReq = required.includes(k);
-              const type = p.type || 'any';
-              const pDesc = p.description ? ' — ' + p.description : '';
-              paramsHtml += '<div class="tools-def-param"><span class="tools-def-param-name">' + escapeHtml(k) +
-                (isReq ? '<span class="tools-def-required">*</span>' : '') +
-                '</span><span class="tools-def-param-type">' + escapeHtml(type) +
-                '</span>' + (pDesc ? '<span class="tools-def-param-desc">' + escapeHtml(pDesc) + '</span>' : '') + '</div>';
-            }
-            paramsHtml += '</div>';
+    if (tool.paramsLine) {
+      try {
+        const params = JSON.parse(tool.paramsLine);
+        const props = params.properties || {};
+        const required = params.required || [];
+        const keys = Object.keys(props);
+        if (keys.length > 0) {
+          paramsHtml = '<div class="tools-def-params">';
+          for (const k of keys) {
+            const p = props[k];
+            const isReq = required.includes(k);
+            const type = p.type || 'any';
+            const pDesc = p.description ? ' — ' + p.description : '';
+            paramsHtml += '<div class="tools-def-param"><span class="tools-def-param-name">' + escapeHtml(k) +
+              (isReq ? '<span class="tools-def-required">*</span>' : '') +
+              '</span><span class="tools-def-param-type">' + escapeHtml(type) +
+              '</span>' + (pDesc ? '<span class="tools-def-param-desc">' + escapeHtml(pDesc) + '</span>' : '') + '</div>';
           }
-        } catch(e) {
-          paramsHtml = '<div class="tools-def-params"><span class="tools-def-param-desc">' + escapeHtml(lines[i]) + '</span></div>';
+          paramsHtml += '</div>';
         }
+      } catch(e) {
+        paramsHtml = '<div class="tools-def-params"><span class="tools-def-param-desc">' + escapeHtml(tool.paramsLine) + '</span></div>';
       }
     }
-    html += '<div class="tools-def-item"><div class="tools-def-name">' + escapeHtml(name) + '</div>' +
-      '<div class="tools-def-desc">' + escapeHtml(desc) + '</div>' + paramsHtml + '</div>';
+    html += '<div class="tools-def-item"><div class="tools-def-name">' + escapeHtml(tool.name) + '</div>' +
+      '<div class="tools-def-desc">' + escapeHtml(tool.desc) + '</div>' + paramsHtml + '</div>';
   }
   html += '</div>';
   return html;
@@ -616,17 +632,17 @@ function prettifyToolContent(content, blockType) {
   let inResponse = false;
 
   for (const line of lines) {
-    if (line.startsWith('Tool name: ')) {
+    if (line === 'Response:') {
+      inResponse = true;
+    } else if (inResponse) {
+      if (line) responseLines.push(line);
+    } else if (line.startsWith('Tool name: ')) {
       toolName = line.replace('Tool name: ', '');
     } else if (line.match(/^Argument \d+ \(/)) {
       const m = line.match(/^Argument \d+ \((.+?)\): (.*)$/);
       if (m) args.push({key: m[1], value: m[2]});
     } else if (line.startsWith('Arguments: ')) {
       args.push({key: 'arguments', value: line.replace('Arguments: ', '')});
-    } else if (line === 'Response:') {
-      inResponse = true;
-    } else if (inResponse && line) {
-      responseLines.push(line);
     }
   }
 
