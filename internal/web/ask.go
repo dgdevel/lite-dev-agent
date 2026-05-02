@@ -316,15 +316,17 @@ func (p *WebAskProvider) handleExec(ctx context.Context, args map[string]any) (a
 		parts = append(parts, "Output from alternative command: "+deny.AltCmd)
 		result, _ := p.runCommand(ctx, deny.AltCmd, timeoutSec)
 		parts = append(parts, result.Content)
+		if deny.Message != "" {
+			parts = append(parts, "The user message: "+deny.Message)
+		}
 		if result.IsError {
 			return agent.ToolResult{Content: strings.Join(parts, "\n"), IsError: true}, nil
 		}
 	} else {
 		parts = append(parts, "Execution denied")
-	}
-
-	if deny.Message != "" {
-		parts = append(parts, "The user message: "+deny.Message)
+		if deny.Message != "" {
+			parts = append(parts, "The user message: "+deny.Message)
+		}
 	}
 
 	return agent.ToolResult{Content: strings.Join(parts, "\n")}, nil
