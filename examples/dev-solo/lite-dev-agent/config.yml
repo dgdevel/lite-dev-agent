@@ -25,6 +25,8 @@ agents:
       - tool: ls
         arguments:
           pathspec: .
+      - tool: available_commands
+        arguments:
     final_tool_calls:
       - tool: memory_extract
         arguments:

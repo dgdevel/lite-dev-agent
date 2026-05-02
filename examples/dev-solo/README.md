@@ -20,3 +20,10 @@ Single agent, self-spawning capability.
 
 2. Run `lite-dev-agent`
 
+# Tweaking
+
+Remove `--enable-memory` and the `final_tool_calls` to disable persistent memory.
+
+Run `nixdevkit-config set llama.reranker_enabled false` to speedup `relevant_code` (less precise).
+
+
