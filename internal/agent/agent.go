@@ -32,13 +32,14 @@ func (e *InterruptionError) Error() string {
 }
 
 type Agent struct {
-	Config    *config.AgentConfig
-	LLMConfig *config.LLMConfig
-	LLM       *llm.Client
-	Registry  *ToolRegistry
-	Writer    io.Writer
-	Filter    *protocol.OutputFilter
-	Timeouts  *config.TimeoutConfig
+	Config          *config.AgentConfig
+	LLMConfig       *config.LLMConfig
+	LLM             *llm.Client
+	Registry        *ToolRegistry
+	Writer          io.Writer
+	Filter          *protocol.OutputFilter
+	Timeouts        *config.TimeoutConfig
+	AgentsMdContent string
 
 	History []llm.Message
 	IsMain  bool
@@ -69,6 +70,9 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 	ctx = context.WithValue(ctx, levelContextKey, opts.Level)
 
 	systemPrompt := interpolatePrompt(a.Config.SystemPrompt)
+	if a.AgentsMdContent != "" {
+		systemPrompt += "\n\n# AGENTS.md\n\n" + a.AgentsMdContent
+	}
 
 	messages := make([]llm.Message, 0, len(opts.History)+2)
 	messages = append(messages, llm.Message{

@@ -307,6 +307,11 @@ func (s *Server) createAgents(writer io.Writer, eventCh chan Event) (map[string]
 	filter := protocol.NewOutputFilter("")
 	agentToolProvider := tools.NewAgentToolProvider(s.cfg, writer, filter, &s.cfg.Timeouts)
 
+	var agentsMdContent string
+	if data, err := os.ReadFile(filepath.Join(s.rootPath, "AGENTS.md")); err == nil {
+		agentsMdContent = string(data)
+	}
+
 	agents := make(map[string]*agent.Agent)
 	var defaultAgent *agent.Agent
 
@@ -330,14 +335,15 @@ func (s *Server) createAgents(writer io.Writer, eventCh chan Event) (map[string]
 		}
 
 		a := &agent.Agent{
-			Config:    ac,
-			LLMConfig: llmCfg,
-			LLM:       client,
-			Registry:  registry,
-			Writer:    writer,
-			Filter:    filter,
-			Timeouts:  &s.cfg.Timeouts,
-			IsMain:    ac.Default,
+			Config:          ac,
+			LLMConfig:       llmCfg,
+			LLM:             client,
+			Registry:        registry,
+			Writer:          writer,
+			Filter:          filter,
+			Timeouts:        &s.cfg.Timeouts,
+			AgentsMdContent: agentsMdContent,
+			IsMain:          ac.Default,
 		}
 
 		agents[ac.Name] = a
