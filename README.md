@@ -211,6 +211,20 @@ system_prompt: >
   current time is {current_time}. Help the user.
 ```
 
+### AGENTS.md
+
+If an `AGENTS.md` file exists in `ROOT_PATH`, its contents are automatically appended to every agent's system prompt (after the config-defined `system_prompt`, under a `# AGENTS.md` heading). This is useful for injecting project-specific conventions, coding standards, or context that all agents should follow.
+
+Example `AGENTS.md`:
+
+```markdown
+- All Go code must pass `gofmt` and `go vet`.
+- Use structured logging via `slog`.
+- Keep functions under 50 lines.
+```
+
+No configuration needed — just drop the file in the project root. If absent, nothing changes.
+
 ### Timeouts
 
 ```yaml
