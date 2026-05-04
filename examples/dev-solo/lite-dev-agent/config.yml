@@ -47,7 +47,7 @@ agents:
 
       1. Research project libraries/dependencies and code patterns, use `relevant_code`, `grep` or `file_read`
 
-      2. Can you resolve request? Tell user. Otherwise `online_search` and `w3m-dump`
+      2. Can you resolve request? Tell user. Otherwise `online_search` and `w3m-dump` or `repo_*` tools for github
 
       3. `ask_open_ended` or `ask_multiple_choice` for possible Implementation
 
