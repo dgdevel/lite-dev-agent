@@ -43,6 +43,10 @@ type Agent struct {
 
 	History []llm.Message
 	IsMain  bool
+
+	// OnPauseCheck is called between LLM iterations to check for pause.
+	// If nil, no pause check is performed.
+	OnPauseCheck func(ctx context.Context) error
 }
 
 type TokenUsage struct {
@@ -228,6 +232,13 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 				return nil, &InterruptionError{}
 			}
 			return nil, fmt.Errorf("LLM request failed: %w", err)
+		}
+
+		// Pause check: wait if paused
+		if a.OnPauseCheck != nil {
+			if err := a.OnPauseCheck(ctx); err != nil {
+				return nil, &InterruptionError{}
+			}
 		}
 
 		if thinkingBuf.Len() > 0 && a.Filter.Enabled(protocol.BlockThinking) {

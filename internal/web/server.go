@@ -36,6 +36,10 @@ type Server struct {
 	active   bool
 	cancelFn context.CancelFunc
 	askHub   *AskHub
+
+	pauseMu   sync.Mutex
+	paused    bool
+	pauseCh   chan struct{}
 }
 
 func NewServer(cfg *config.Config, rootPath string, llmClients map[string]*llm.Client, mcpProviders map[string]*tools.MCPProvider) *Server {
@@ -62,6 +66,8 @@ func (s *Server) Start(addr string) error {
 	mux.HandleFunc("POST /api/conversations/{filename}/chat", s.handleChat)
 	mux.HandleFunc("POST /api/conversations/{filename}/ask/{askId}", s.handleAskResponse)
 	mux.HandleFunc("POST /api/abort", s.handleAbort)
+	mux.HandleFunc("POST /api/pause", s.handlePause)
+	mux.HandleFunc("POST /api/resume", s.handleResume)
 
 	fmt.Fprintf(os.Stderr, "web server listening on %s\n", addr)
 	return http.ListenAndServe(addr, mux)
@@ -209,6 +215,14 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		s.active = false
 		s.cancelFn = nil
 		s.mu.Unlock()
+		// Reset pause state
+		s.pauseMu.Lock()
+		if s.paused && s.pauseCh != nil {
+			close(s.pauseCh)
+		}
+		s.paused = false
+		s.pauseCh = nil
+		s.pauseMu.Unlock()
 	}()
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -281,6 +295,44 @@ func (s *Server) handleAbort(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
+	s.pauseMu.Lock()
+	if !s.paused {
+		s.paused = true
+		s.pauseCh = make(chan struct{})
+	}
+	s.pauseMu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
+	s.pauseMu.Lock()
+	if s.paused && s.pauseCh != nil {
+		s.paused = false
+		close(s.pauseCh)
+		s.pauseCh = nil
+	}
+	s.pauseMu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) WaitIfPaused(ctx context.Context) error {
+	s.pauseMu.Lock()
+	if !s.paused || s.pauseCh == nil {
+		s.pauseMu.Unlock()
+		return nil
+	}
+	ch := s.pauseCh
+	s.pauseMu.Unlock()
+
+	select {
+	case <-ch:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (s *Server) handleAskResponse(w http.ResponseWriter, r *http.Request) {
 	askID := r.PathValue("askId")
 	if askID == "" {
@@ -344,6 +396,7 @@ func (s *Server) createAgents(writer io.Writer, eventCh chan Event) (map[string]
 			Timeouts:        &s.cfg.Timeouts,
 			AgentsMdContent: agentsMdContent,
 			IsMain:          ac.Default,
+			OnPauseCheck:    s.WaitIfPaused,
 		}
 
 		agents[ac.Name] = a

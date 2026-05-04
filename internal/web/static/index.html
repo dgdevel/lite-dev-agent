@@ -40,8 +40,12 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',He
 .token-stat.total{color:#d2a8ff;background:rgba(210,168,255,.12)}
 .topbar-status{font-size:12px;color:var(--muted)}
 .topbar-status.active{color:var(--green)}
+.topbar-status.paused{color:var(--yellow)}
 .abort-btn{padding:4px 12px;background:transparent;color:var(--red);border:1px solid var(--red);border-radius:var(--radius);cursor:pointer;font-size:12px;display:none}
 .abort-btn.visible{display:inline-block}
+.pause-btn{padding:4px 12px;background:transparent;color:var(--yellow);border:1px solid var(--yellow);border-radius:var(--radius);cursor:pointer;font-size:12px;display:none}
+.pause-btn.visible{display:inline-block}
+.pause-btn.resuming{color:var(--green);border-color:var(--green)}
 
 .autoscroll-label{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none}
 .autoscroll-label input{accent-color:var(--blue);cursor:pointer}
@@ -206,6 +210,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',He
       <span class="topbar-status" id="topbarStatus"></span>
       <span class="token-stats" id="tokenStats"></span>
       <label class="autoscroll-label"><input type="checkbox" id="autoscrollCheck" checked> Autoscroll</label>
+      <button class="pause-btn" id="pauseBtn">Pause</button>
       <button class="abort-btn" id="abortBtn">Abort</button>
     </div>
     <div class="messages" id="messages">
@@ -228,11 +233,13 @@ const topbarTitle = $('#topbarTitle');
 const topbarStatus = $('#topbarStatus');
 const tokenStatsEl = $('#tokenStats');
 const abortBtn = $('#abortBtn');
+const pauseBtn = $('#pauseBtn');
 const emptyState = $('#emptyState');
 const sidebar = $('#sidebar');
 const sidebarToggle = $('#sidebarToggle');
 
 let currentConv = null;
+let isPaused = false;
 let isRunning = false;
 let currentBlockEl = null;
 let currentContentEl = null;
@@ -889,9 +896,17 @@ function setInputState(enabled) {
   msgInput.disabled = !enabled;
   sendBtn.disabled = !enabled;
   abortBtn.classList.toggle('visible', !enabled);
+  pauseBtn.classList.toggle('visible', !enabled);
   topbarStatus.textContent = enabled ? '' : 'Agent running...';
   topbarStatus.classList.toggle('active', !enabled);
-  if (enabled) msgInput.focus();
+  if (enabled) {
+    isPaused = false;
+    pauseBtn.textContent = 'Pause';
+    pauseBtn.classList.remove('resuming');
+    pauseBtn.classList.remove('visible');
+    topbarStatus.classList.remove('paused');
+    msgInput.focus();
+  }
 }
 
 function scrollToBottom() {
@@ -955,6 +970,26 @@ newChatBtn.addEventListener('click', async () => {
 
 abortBtn.addEventListener('click', () => {
   api('POST', '/abort');
+});
+
+pauseBtn.addEventListener('click', () => {
+  if (!isPaused) {
+    api('POST', '/pause');
+    isPaused = true;
+    pauseBtn.textContent = 'Resume';
+    pauseBtn.classList.add('resuming');
+    topbarStatus.textContent = 'Paused (waiting for LLM response to finish)...';
+    topbarStatus.classList.add('paused');
+    topbarStatus.classList.remove('active');
+  } else {
+    api('POST', '/resume');
+    isPaused = false;
+    pauseBtn.textContent = 'Pause';
+    pauseBtn.classList.remove('resuming');
+    topbarStatus.textContent = 'Agent running...';
+    topbarStatus.classList.remove('paused');
+    topbarStatus.classList.add('active');
+  }
 });
 
 function escapeHtml(text) {
