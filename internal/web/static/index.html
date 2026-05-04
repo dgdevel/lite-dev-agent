@@ -158,7 +158,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',He
 .ask-input-row textarea:focus{border-color:var(--blue)}
 .ask-input-row button,.ask-exec-actions button{padding:6px 14px;background:var(--blue);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:500;white-space:nowrap}
 .ask-input-row button:hover,.ask-exec-actions button:hover{background:#388bfd}
-.ask-exec-cmdline{font-family:monospace;font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:6px 10px;margin-bottom:10px;color:var(--text)}
+.ask-exec-cmdline{font-family:monospace;font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:6px 10px;margin-bottom:6px;color:var(--text)}
 .ask-exec-actions{display:flex;gap:8px}
 .ask-exec-actions button{padding:6px 14px;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:500;transition:background .15s}
 .ask-exec-actions button:first-child{background:var(--green);color:#fff}
@@ -729,12 +729,14 @@ function handleAskQuestion(event) {
     content.innerHTML = html;
   } else if (q.type === 'exec') {
     content.innerHTML = '<div class="ask-question-text">Allow command execution?</div>' +
-      '<div class="ask-exec-cmdline">' + escapeHtml(q.cmdline) + '</div>' +
-      '<div class="ask-exec-actions">' +
+      '<div><label>Command</label><input id="askExecCmd_' + q.id + '" value="' + escapeHtml(q.cmdline).replace(/"/g, '&quot;') + '" spellcheck="false" class="ask-exec-cmdline" style="width:100%;box-sizing:border-box"></div>' +
+      '<div style="margin-top:6px"><label>Timeout (seconds)</label><input id="askExecTimeout_' + q.id + '" type="number" min="0" value="' + (q.timeout || '') + '" placeholder="default" style="width:100px"></div>' +
+      '<div class="ask-exec-actions" style="margin-top:10px">' +
       '<button onclick="submitAskExec(\'' + q.id + '\', true)">Approve</button>' +
-      '<button class="deny-btn" onclick="showExecDenyForm(\'' + q.id + '\', \'' + escapeHtml(q.cmdline).replace(/\\/g, "\\\\").replace(/'/g, "\\'") + '\')">Deny</button></div>' +
+      '<button class="deny-btn" onclick="showExecDenyForm(\'' + q.id + '\')">Deny</button></div>' +
       '<div class="ask-deny-form" id="askDeny_' + q.id + '" style="display:none">' +
       '<div><label>Alternative command</label><input id="askDenyAltCmd_' + q.id + '" placeholder="e.g. ls -la" spellcheck="false"></div>' +
+      '<div><label>Timeout override (seconds)</label><input id="askDenyTimeout_' + q.id + '" type="number" min="0" placeholder="use above" style="width:100px"></div>' +
       '<div><label>Message to the agent</label><textarea id="askDenyMsg_' + q.id + '" placeholder="Explain why this command was denied..." rows="2"></textarea></div>' +
       '<button class="ask-deny-submit" onclick="submitAskExecDeny(\'' + q.id + '\')">Submit denial</button></div>';
   }
@@ -793,24 +795,33 @@ function submitAskChoice(askId, mode, options, allowOpenEnd, openEndIdx) {
   sendAskResponse(askId, labels.join(', '), document.querySelector('#messages .block-ask:last-of-type .block-content'));
 }
 
-function showExecDenyForm(askId, cmdline) {
+function showExecDenyForm(askId) {
   const form = document.getElementById('askDeny_' + askId);
   if (form) form.style.display = 'flex';
   const altInput = document.getElementById('askDenyAltCmd_' + askId);
-  if (altInput && !altInput.value) altInput.value = cmdline || '';
+  const cmdInput = document.getElementById('askExecCmd_' + askId);
+  if (altInput && !altInput.value && cmdInput) altInput.value = cmdInput.value;
   if (altInput) altInput.focus();
 }
 
 function submitAskExec(askId, approved) {
   const content = document.querySelector('#messages .block-ask:last-of-type .block-content');
-  sendAskResponse(askId, approved ? 'y' : 'n', content);
+  const cmdInput = document.getElementById('askExecCmd_' + askId);
+  const timeoutInput = document.getElementById('askExecTimeout_' + askId);
+  const cmdline = cmdInput ? cmdInput.value.trim() : '';
+  const timeout = timeoutInput ? parseInt(timeoutInput.value) || 0 : 0;
+  const response = JSON.stringify({cmdline: cmdline, timeout: timeout});
+  const displayText = approved ? ('Approved: ' + cmdline + (timeout ? ' (timeout: ' + timeout + 's)' : '')) : 'Denied';
+  sendAskResponse(askId, response, content, displayText);
 }
 
 function submitAskExecDeny(askId) {
   const altCmd = (document.getElementById('askDenyAltCmd_' + askId) || {}).value || '';
   const message = (document.getElementById('askDenyMsg_' + askId) || {}).value || '';
+  const timeoutInput = document.getElementById('askDenyTimeout_' + askId);
+  const timeout = timeoutInput ? parseInt(timeoutInput.value) || 0 : 0;
   const content = document.querySelector('#messages .block-ask:last-of-type .block-content');
-  const response = JSON.stringify({alt_cmd: altCmd.trim(), message: message.trim()});
+  const response = JSON.stringify({alt_cmd: altCmd.trim(), message: message.trim(), timeout: timeout});
   sendAskResponse(askId, response, content, altCmd.trim() || message.trim() || 'Execution denied');
 }
 

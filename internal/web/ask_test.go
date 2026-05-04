@@ -263,7 +263,7 @@ func TestWebAskProviderExec(t *testing.T) {
 		t.Fatalf("expected cmdline, got %q", event.AskQuestion.Cmdline)
 	}
 
-	hub.Respond(event.AskQuestion.ID, "y")
+	hub.Respond(event.AskQuestion.ID, `{"cmdline":"echo hello world","timeout":5}`)
 
 	select {
 	case <-done:
@@ -298,7 +298,7 @@ func TestWebAskProviderExecApprovedYes(t *testing.T) {
 	}()
 
 	event := <-ch
-	hub.Respond(event.AskQuestion.ID, "yes")
+	hub.Respond(event.AskQuestion.ID, `{"cmdline":"echo ok"}`)
 	<-done
 
 	if result.IsError {
@@ -498,7 +498,7 @@ func TestWebAskProviderExecCommandError(t *testing.T) {
 	}()
 
 	event := <-ch
-	hub.Respond(event.AskQuestion.ID, "y")
+	hub.Respond(event.AskQuestion.ID, `{"cmdline":"false","timeout":5}`)
 	<-done
 
 	if !result.IsError {
@@ -525,7 +525,7 @@ func TestWebAskProviderExecTimeout(t *testing.T) {
 	}()
 
 	event := <-ch
-	hub.Respond(event.AskQuestion.ID, "y")
+	hub.Respond(event.AskQuestion.ID, `{"cmdline":"sleep 10","timeout":1}`)
 	<-done
 
 	if !result.IsError {
@@ -552,7 +552,7 @@ func TestWebAskProviderExecDefaultTimeout(t *testing.T) {
 	}()
 
 	event := <-ch
-	hub.Respond(event.AskQuestion.ID, "y")
+	hub.Respond(event.AskQuestion.ID, `{"cmdline":"echo fast"}`)
 	<-done
 
 	if result.IsError {
@@ -579,7 +579,7 @@ func TestWebAskProviderExecCapturesStderr(t *testing.T) {
 	}()
 
 	event := <-ch
-	hub.Respond(event.AskQuestion.ID, "y")
+	hub.Respond(event.AskQuestion.ID, `{"cmdline":"echo stdout_msg; echo stderr_msg >&2","timeout":5}`)
 	<-done
 
 	if result.IsError {

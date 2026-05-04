@@ -296,36 +296,46 @@ func (p *WebAskProvider) handleExec(ctx context.Context, args map[string]any) (a
 		return agent.ToolResult{Content: fmt.Sprintf("error reading response: %v", err), IsError: true}, nil
 	}
 
-	if isAffirmative(response) {
-		return p.runCommand(ctx, cmdline, timeoutSec)
+	// Frontend sends JSON for both approve and deny
+	type execUserResponse struct {
+		Cmdline string `json:"cmdline"`              // present on approve
+		Timeout int    `json:"timeout,omitempty"`     // present on both
+		AltCmd  string `json:"alt_cmd"`               // present on deny
+		Message string `json:"message"`               // present on deny
 	}
 
-	type execDenyResponse struct {
-		AltCmd  string `json:"alt_cmd"`
-		Message string `json:"message"`
-	}
-
-	var deny execDenyResponse
-	if err := json.Unmarshal([]byte(response), &deny); err != nil {
+	var userResp execUserResponse
+	if err := json.Unmarshal([]byte(response), &userResp); err != nil {
 		return agent.ToolResult{Content: "Execution denied"}, nil
 	}
 
+	effectiveTimeout := timeoutSec
+	if userResp.Timeout > 0 {
+		effectiveTimeout = userResp.Timeout
+	}
+
+	// Approve: cmdline is present
+	if userResp.Cmdline != "" {
+		return p.runCommand(ctx, userResp.Cmdline, effectiveTimeout)
+	}
+
+	// Deny with alternative command
 	var parts []string
 
-	if deny.AltCmd != "" {
-		parts = append(parts, "Output from alternative command: "+deny.AltCmd)
-		result, _ := p.runCommand(ctx, deny.AltCmd, timeoutSec)
+	if userResp.AltCmd != "" {
+		parts = append(parts, "Output from alternative command: "+userResp.AltCmd)
+		result, _ := p.runCommand(ctx, userResp.AltCmd, effectiveTimeout)
 		parts = append(parts, result.Content)
-		if deny.Message != "" {
-			parts = append(parts, "The user message: "+deny.Message)
+		if userResp.Message != "" {
+			parts = append(parts, "The user message: "+userResp.Message)
 		}
 		if result.IsError {
 			return agent.ToolResult{Content: strings.Join(parts, "\n"), IsError: true}, nil
 		}
 	} else {
 		parts = append(parts, "Execution denied")
-		if deny.Message != "" {
-			parts = append(parts, "The user message: "+deny.Message)
+		if userResp.Message != "" {
+			parts = append(parts, "The user message: "+userResp.Message)
 		}
 	}
 
