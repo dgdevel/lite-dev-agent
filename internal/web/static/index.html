@@ -202,6 +202,9 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',He
       <button class="new-chat-btn" id="newChatBtn">+ New Chat</button>
     </div>
     <div class="conv-list" id="convList"></div>
+    <div style="padding:8px 12px;border-top:1px solid var(--border)">
+      <button class="new-chat-btn" id="templateBtn" style="background:var(--surface2);color:var(--muted);border:1px solid var(--border)">📋 Conversation Template</button>
+    </div>
   </aside>
   <div class="main">
     <div class="topbar">
@@ -239,6 +242,7 @@ const sidebar = $('#sidebar');
 const sidebarToggle = $('#sidebarToggle');
 
 let currentConv = null;
+let isTemplateView = false;
 let isPaused = false;
 let isRunning = false;
 let currentBlockEl = null;
@@ -300,6 +304,8 @@ async function refreshConvList() {
 
 async function loadConversation(filename) {
   currentConv = filename;
+  isTemplateView = false;
+  msgInput.placeholder = 'Type your message... (Enter to send, Shift+Enter for new line)';
   refreshConvList();
   topbarTitle.textContent = filename.replace('.txt','').replace(/_/g,' ');
   tokenStatsEl.classList.remove('visible');
@@ -402,6 +408,9 @@ function finalizeBlock() {
     currentContentEl.innerHTML = prettifyToolContent(currentRawText, 'tools_output');
     const summary = currentBlockEl.querySelector('.tool-summary');
     if (summary) summary.textContent = extractToolResultSummary(currentRawText);
+  }
+  if (currentBlockEl.classList.contains('block-tools_definition')) {
+    currentContentEl.innerHTML = prettifyToolsDefinition(currentRawText);
   }
   if (currentBlockEl.classList.contains('block-token_stats')) {
     const summaryText = extractTokenStatsSummary(currentRawText);
@@ -904,13 +913,14 @@ async function sendMessage(message) {
 
 function setInputState(enabled) {
   isRunning = !enabled;
-  msgInput.disabled = !enabled;
-  sendBtn.disabled = !enabled;
+  const templateDisabled = isTemplateView;
+  msgInput.disabled = !enabled || templateDisabled;
+  sendBtn.disabled = !enabled || templateDisabled;
   abortBtn.classList.toggle('visible', !enabled);
   pauseBtn.classList.toggle('visible', !enabled);
   topbarStatus.textContent = enabled ? '' : 'Agent running...';
   topbarStatus.classList.toggle('active', !enabled);
-  if (enabled) {
+  if (enabled && !templateDisabled) {
     isPaused = false;
     pauseBtn.textContent = 'Pause';
     pauseBtn.classList.remove('resuming');
@@ -930,12 +940,14 @@ function scrollToBottom() {
 sendBtn.addEventListener('click', async () => {
   const msg = msgInput.value.trim();
   if (!msg) return;
-  if (!currentConv) {
+  if (isTemplateView || !currentConv) {
+    if (isTemplateView) return;
     msgInput.value = '';
     autoResize();
     const res = await api('POST', '/conversations');
     const data = await res.json();
     currentConv = data.filename;
+    isTemplateView = false;
     messagesEl.innerHTML = '';
     emptyState.style.display = 'none';
     topbarTitle.textContent = data.filename.replace('.txt','').replace(/_/g,' ');
@@ -968,6 +980,8 @@ newChatBtn.addEventListener('click', async () => {
   const res = await api('POST', '/conversations');
   const data = await res.json();
   currentConv = data.filename;
+  isTemplateView = false;
+  msgInput.placeholder = 'Type your message... (Enter to send, Shift+Enter for new line)';
   messagesEl.innerHTML = '';
   emptyState.style.display = 'none';
   topbarTitle.textContent = data.filename.replace('.txt','').replace(/_/g,' ');
@@ -1052,6 +1066,28 @@ function renderMarkdown(text) {
 }
 
 refreshConvList();
+
+$('#templateBtn').addEventListener('click', async () => {
+  currentConv = null;
+  isTemplateView = true;
+  refreshConvList();
+  topbarTitle.textContent = 'Conversation Template';
+  tokenStatsEl.classList.remove('visible');
+  tokenStatsEl.textContent = '';
+  topbarStatus.textContent = '';
+  topbarStatus.className = 'topbar-status';
+  msgInput.placeholder = 'Template view — input disabled';
+
+  try {
+    const res = await api('GET', '/template');
+    const blocks = await res.json();
+    renderBlocks(blocks);
+    setInputState(true);
+    sidebar.classList.remove('open');
+  } catch(e) {
+    handleError({content: 'Failed to load template: ' + e.message});
+  }
+});
 </script>
 </body>
 </html>

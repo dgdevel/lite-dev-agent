@@ -68,6 +68,7 @@ func (s *Server) Start(addr string) error {
 	mux.HandleFunc("POST /api/abort", s.handleAbort)
 	mux.HandleFunc("POST /api/pause", s.handlePause)
 	mux.HandleFunc("POST /api/resume", s.handleResume)
+	mux.HandleFunc("GET /api/template", s.handleTemplate)
 
 	fmt.Fprintf(os.Stderr, "web server listening on %s\n", addr)
 	return http.ListenAndServe(addr, mux)
@@ -314,6 +315,75 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	}
 	s.pauseMu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleTemplate(w http.ResponseWriter, r *http.Request) {
+	ac := s.cfg.DefaultAgent()
+	if ac == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "no default agent configured"})
+		return
+	}
+
+	// Build system prompt
+	systemPrompt := agent.InterpolatePrompt(ac.SystemPrompt)
+	if data, err := os.ReadFile(filepath.Join(s.rootPath, "AGENTS.md")); err == nil {
+		systemPrompt += "\n\n# AGENTS.md\n\n" + string(data)
+	}
+
+	type blockInfo struct {
+		Type    string `json:"type"`
+		Agent   string `json:"agent"`
+		Level   int    `json:"level"`
+		Content string `json:"content"`
+	}
+
+	var result []blockInfo
+
+	result = append(result, blockInfo{
+		Type:    "system_prompt",
+		Agent:   ac.Name,
+		Level:   0,
+		Content: systemPrompt,
+	})
+
+	// Build tool definitions
+	_, mainAgent := s.createAgents(io.Discard, nil)
+	toolDefs := mainAgent.Registry.ToolDefinitions()
+	if len(toolDefs) > 0 {
+		result = append(result, blockInfo{
+			Type:    "tools_definition",
+			Agent:   ac.Name,
+			Level:   0,
+			Content: agent.FormatToolDefinitions(toolDefs),
+		})
+	}
+
+	// Initial tool calls preview (with empty placeholders)
+	if len(ac.InitialToolCalls) > 0 {
+		for i, itc := range ac.InitialToolCalls {
+			expandedArgs := agent.ReplacePlaceholdersInArgs(itc.Arguments, "", "")
+			argsJSON, _ := json.Marshal(expandedArgs)
+			argsStr := string(argsJSON)
+			result = append(result, blockInfo{
+				Type:    "tools_input",
+				Agent:   ac.Name,
+				Level:   0,
+				Content: agent.FormatToolInput(itc.Tool, argsStr),
+			})
+			result = append(result, blockInfo{
+				Type:    "tools_output",
+				Agent:   ac.Name,
+				Level:   0,
+				Content: agent.FormatToolOutput(itc.Tool, "(will be executed on first message)"),
+			})
+			_ = i
+		}
+	}
+
+	if result == nil {
+		result = []blockInfo{}
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) WaitIfPaused(ctx context.Context) error {

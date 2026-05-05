@@ -73,7 +73,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 
 	ctx = context.WithValue(ctx, levelContextKey, opts.Level)
 
-	systemPrompt := interpolatePrompt(a.Config.SystemPrompt)
+	systemPrompt := InterpolatePrompt(a.Config.SystemPrompt)
 	if a.AgentsMdContent != "" {
 		systemPrompt += "\n\n# AGENTS.md\n\n" + a.AgentsMdContent
 	}
@@ -116,7 +116,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 		var wg sync.WaitGroup
 
 		for i, itc := range a.Config.InitialToolCalls {
-			expandedArgs := replacePlaceholdersInArgs(itc.Arguments, opts.UserMessage, "")
+			expandedArgs := ReplacePlaceholdersInArgs(itc.Arguments, opts.UserMessage, "")
 			argsJSON, _ := json.Marshal(expandedArgs)
 			argsStr := string(argsJSON)
 			callID := fmt.Sprintf("initial_%d", i)
@@ -352,7 +352,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 			var wg sync.WaitGroup
 
 			for i, ftc := range a.Config.FinalToolCalls {
-				expandedArgs := replacePlaceholdersInArgs(ftc.Arguments, opts.UserMessage, conversationLog)
+				expandedArgs := ReplacePlaceholdersInArgs(ftc.Arguments, opts.UserMessage, conversationLog)
 				argsJSON, _ := json.Marshal(expandedArgs)
 				argsStr := string(argsJSON)
 				callID := fmt.Sprintf("final_%d", i)
@@ -463,7 +463,7 @@ func (u *TokenUsage) writeChildren(b *strings.Builder, prefix string, ts string)
 	}
 }
 
-func replacePlaceholdersInArgs(args map[string]interface{}, prompt string, conversation string) map[string]interface{} {
+func ReplacePlaceholdersInArgs(args map[string]interface{}, prompt string, conversation string) map[string]interface{} {
 	result := make(map[string]interface{}, len(args))
 	for k, v := range args {
 		result[k] = replacePlaceholdersInValue(v, prompt, conversation)
@@ -478,7 +478,7 @@ func replacePlaceholdersInValue(v interface{}, prompt string, conversation strin
 		s = strings.ReplaceAll(s, "%c", conversation)
 		return s
 	case map[string]interface{}:
-		return replacePlaceholdersInArgs(val, prompt, conversation)
+		return ReplacePlaceholdersInArgs(val, prompt, conversation)
 	case []interface{}:
 		result := make([]interface{}, len(val))
 		for i, elem := range val {
@@ -512,7 +512,7 @@ func formatConversationLog(messages []llm.Message) string {
 	return b.String()
 }
 
-func interpolatePrompt(prompt string) string {
+func InterpolatePrompt(prompt string) string {
 	now := time.Now()
 	prompt = strings.ReplaceAll(prompt, "{current_date}", now.Format("2006-01-02"))
 	prompt = strings.ReplaceAll(prompt, "{current_time}", now.Format("2006-01-02T15:04:05"))
