@@ -28,6 +28,7 @@ import (
 type Server struct {
 	cfg              *config.Config
 	rootPath         string
+	dirName          string
 	llmClients       map[string]*llm.Client
 	mcpProviders     map[string]*tools.MCPProvider
 	conversationsDir string
@@ -46,9 +47,16 @@ func NewServer(cfg *config.Config, rootPath string, llmClients map[string]*llm.C
 	conversationsDir := filepath.Join(rootPath, ".lite-dev-agent", "conversations")
 	os.MkdirAll(conversationsDir, 0755)
 
+	abs, err := filepath.Abs(rootPath)
+	if err != nil {
+		abs = rootPath
+	}
+	dirName := filepath.Base(abs)
+
 	return &Server{
 		cfg:              cfg,
 		rootPath:         rootPath,
+		dirName:          dirName,
 		llmClients:       llmClients,
 		mcpProviders:     mcpProviders,
 		conversationsDir: conversationsDir,
@@ -79,7 +87,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	dirName := filepath.Base(s.rootPath)
+	dirName := s.dirName
 	page := bytes.ReplaceAll(indexHTML, []byte("{{CWD_NAME}}"), []byte(dirName))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write(page)
