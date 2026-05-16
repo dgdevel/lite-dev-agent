@@ -1,3 +1,5 @@
+NOTICE: The project was merged into [llmdevkit](https://github.com/dgdevel/llmdevkit/).
+
 # lite-dev-agent
 
 A web-based LLM agent orchestrator with configurable tool access and a browser UI.
